@@ -6,6 +6,14 @@
 #include <SDL3/SDL.h>
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define chdir _chdir
+#else
+#include <unistd.h> // chdir
+#endif
 
 static br_pixelmap *screen = NULL, *colour_buffer = NULL, *depth_buffer = NULL;
 static br_actor *world, *camera;
@@ -166,9 +174,21 @@ static void destroy_opengl_renderer() {
 }
 
 int main(int argc, char** argv) {
+    const char *working_path = NULL;
     for (int i = 1; i < argc; ) {
-        int consumed = 0;
-        if (BrStrCmp(argv[i], "--renderer") == 0) {
+        int consumed = -1;
+        if (BrStrCmp(argv[i], "-v") == 0 || BrStrCmp(argv[i], "--verbose") == 0) {
+            SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
+        }
+        else if (BrStrCmp(argv[i], "--data") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "--data needs an argument\n");
+                return 1;
+            }
+            consumed = 2;
+            working_path = argv[i + 1];
+        }
+        else if (BrStrCmp(argv[i], "--renderer") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "--renderer needs an argument: software or opengl\n");
                 return 1;
@@ -183,19 +203,27 @@ int main(int argc, char** argv) {
                 return 1;
             }
         }
-        if (consumed < 0) {
-            fprintf(stderr, "Unsupported argument: %s\n", argv[i]);
+        if (consumed <= 0) {
+            fprintf(stderr, "Unsupported argument: \"%s\"\n", argv[i]);
             return 1;
         }
         i += consumed;
     }
+    if (working_path) {
+        chdir(working_path);
+    }
 
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        printf("sdl_init panic! (%s)\n", SDL_GetError());
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        printf("SDL_Init panic! (%s)\n", SDL_GetError());
         return -1;
     }
 
-    BrBegin();
+    SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "About to call BrBegin");
+    if (BrBegin() != BRE_OK) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "BrBegin failed");
+        return 1;
+    }
+    SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "BrBegin successful!");
 
     switch (brender_renderer) {
     case eRenderer_software:
@@ -234,15 +262,15 @@ int main(int argc, char** argv) {
     camera_data->yon_z = 300;
 
     // load palette
-    br_pixelmap* pal_std = BrPixelmapLoad("../dat/gamelet.pal");
+    br_pixelmap* pal_std = BrPixelmapLoad("gamelet.pal");
     BrDevPaletteSetOld(pal_std);
 
     // load scene
     br_pixelmap *pixmaps[100];
-    int pixmap_count = BrPixelmapLoadMany("../dat/miniskin.pix", pixmaps, 100);
+    int pixmap_count = BrPixelmapLoadMany("miniskin.pix", pixmaps, 100);
     BrMapAddMany(pixmaps, pixmap_count);
     br_material *materials[100];
-    int material_count = BrMaterialLoadMany("../dat/minibod.mat", materials, 100);
+    int material_count = BrMaterialLoadMany("minibod.mat", materials, 100);
     for (int i = 0; i < material_count; i++) {
         materials[i]->flags |= BR_MATF_PERSPECTIVE;
         materials[i]->flags &= ~BR_MATF_LIGHT;
@@ -250,15 +278,18 @@ int main(int argc, char** argv) {
     }
     BrMaterialAddMany(materials, material_count);
     br_model *models[100];
-    int model_count = BrModelLoadMany("../dat/minibody.dat", models, 100);
+    int model_count = BrModelLoadMany("minibody.dat", models, 100);
     BrModelAddMany(models, model_count);
 
-    br_actor *mini = BrActorLoad("../dat/minibody.act");
+    br_actor *mini = BrActorLoad("minibody.act");
 
     BrActorAdd(world, mini);
 
     ticks_last = SDL_GetTicks();
 
+    Uint64 start_sample = SDL_GetTicks();
+    Uint64 count_frames = 0;
+    char fps_text_buffer[16] = "";
     for (bool running = true; running;) {
         float dt;
         SDL_Event event;
@@ -267,10 +298,15 @@ int main(int argc, char** argv) {
         dt = (float)(ticks_now - ticks_last) / 1000.0f;
         ticks_last = ticks_now;
 
-        while (SDL_PollEvent(&event) > 0) {
+        while (SDL_PollEvent(&event)) {
             switch (event.type) {
             case SDL_EVENT_QUIT:
                 running = false;
+                break;
+            case SDL_EVENT_KEY_DOWN:
+                if (event.key.key == SDLK_Q || event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                    running = false;
+                }
                 break;
             }
         }
@@ -281,6 +317,17 @@ int main(int argc, char** argv) {
         BrPixelmapFill(depth_buffer, 0xFFFFFFFF);
 
         BrZbSceneRender(world, camera, colour_buffer, depth_buffer);
+        count_frames += 1;
+        Uint64 now = SDL_GetTicks();
+        if (now - start_sample >= 1000) {
+            float fps = 1000.0f * (float)count_frames / (float)(now - start_sample);
+            BrSprintfN(fps_text_buffer, sizeof(fps_text_buffer), "%2.1ffps", fps);
+            fps_text_buffer[sizeof(fps_text_buffer) - 1] = '\0';
+            start_sample = now;
+            count_frames = 0;
+        }
+        BrPixelmapText(colour_buffer, -width / 2, -height / 2, 10, BrFontProp7x9, fps_text_buffer);
+
         BrPixelmapDoubleBuffer(screen, colour_buffer);
     }
 
