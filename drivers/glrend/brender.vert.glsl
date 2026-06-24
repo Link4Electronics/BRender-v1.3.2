@@ -89,6 +89,7 @@ out vec3 rawPosition;
 out vec3 rawNormal;
 
 out vec3 v_frag_pos;
+out float v_view_z;
 
 bool directLightExists;
 
@@ -309,6 +310,7 @@ void main()
     vec4 pos = vec4(aPosition, 1.0);
 
     position = model_view * pos;
+    v_view_z = position.z;
     normal = vec4(normalize(mat3(normal_matrix) * aNormal), 0);
     uv = aUV;
 

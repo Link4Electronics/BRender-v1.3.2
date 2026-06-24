@@ -84,6 +84,7 @@ in vec3 rawPosition;
 in vec3 rawNormal;
 
 in vec3 v_frag_pos;
+in float v_view_z;
 
 out vec4 fragColour;
 
@@ -183,11 +184,9 @@ void processClipPlanes() {
 void doDistanceFog() {
     if (fog_enabled) {
 
-        // Reconstruct linear depth from OpenGL depth buffer.
-        // The projection matrix was converted from D3D to OpenGL by negating
-        // the 3rd column (see VIDEOI_D3DtoGLProjection). This produces a
-        // non-inverted depth range: near=0.5, far=1.0 in gl_FragCoord.z.
-        float linear_depth = (hither_z * yon_z) / (2.0 * yon_z - hither_z - 2.0 * gl_FragCoord.z * (yon_z - hither_z));
+        // Compute linear depth from view-space Z (passed as varying from vertex shader).
+        // In view space, visible objects have z < 0, so negate to get positive depth.
+        float linear_depth = -v_view_z;
 
         if (linear_depth < fog_min) {
             //return;
