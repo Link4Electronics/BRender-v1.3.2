@@ -68,7 +68,7 @@ layout(std140) uniform br_model_state
     bool disable_colour_key;
     bool disable_texture;
     bool fog_enabled;
-    vec3 fog_colour;
+    vec4 fog_colour;
     float fog_min;
     float fog_max;
     float alpha;
@@ -183,8 +183,11 @@ void processClipPlanes() {
 void doDistanceFog() {
     if (fog_enabled) {
 
-        // Compute exponential fog factor
-        float linear_depth = (hither_z * yon_z / (yon_z - gl_FragCoord.z * (yon_z - hither_z)));
+        // Reconstruct linear depth from OpenGL depth buffer.
+        // The projection matrix was converted from D3D to OpenGL by negating
+        // the 3rd column (see VIDEOI_D3DtoGLProjection). This produces a
+        // non-inverted depth range: near=0.5, far=1.0 in gl_FragCoord.z.
+        float linear_depth = (hither_z * yon_z) / (2.0 * yon_z - hither_z - 2.0 * gl_FragCoord.z * (yon_z - hither_z));
 
         if (linear_depth < fog_min) {
             //return;
@@ -193,7 +196,7 @@ void doDistanceFog() {
         float linear_depth_normalized = linear_depth / yon_z;
         float density = 1/fog_max * FOGGING_EMULATE_3DFX_DENSITY_MULTIPLIER;
         float fogging_factor = 1.0 - exp(-density * linear_depth_normalized * linear_depth_normalized);
-        fragColour.rgb = mix(fragColour.rgb, fog_colour, clamp(fogging_factor, 0.0, 1.0));
+        fragColour.rgb = mix(fragColour.rgb, fog_colour.rgb, clamp(fogging_factor, 0.0, 1.0));
     }
 }
 
