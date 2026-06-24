@@ -112,14 +112,18 @@ static void apply_depth_properties(state_stack* state, uint32_t states) {
 // take a pixelmap and palette and convert 8 bit to 32 bit just in time
 static void update_paletted_texture(br_pixelmap *src, br_uint_32 *palette) {
     uint32_t* buffer = BrScratchAllocate(sizeof(uint32_t) * src->width * src->height);
-    uint32_t* buffer_ptr = buffer;
+    uint8_t* buffer_ptr = (uint8_t*)buffer;
     br_uint_8* src_px = src->pixels;
 
     for (int y = 0; y < src->height; y++) {
         for (int x = 0; x < src->width; x++) {
             int index = src_px[y * src->row_bytes + x];
-            *buffer_ptr = (0xff000000 | BR_BLU(palette[index]) << 16 | BR_GRN(palette[index]) << 8 | BR_RED(palette[index]));
-            buffer_ptr++;
+            br_uint_32 entry = palette[index];
+            buffer_ptr[0] = BR_RED(entry);
+            buffer_ptr[1] = BR_GRN(entry);
+            buffer_ptr[2] = BR_BLU(entry);
+            buffer_ptr[3] = 0xff;
+            buffer_ptr += 4;
         }
     }
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, src->width, src->height, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
@@ -350,7 +354,9 @@ void StoredGLRenderGroup(br_geometry_stored* self, br_renderer* renderer, const 
 
     BrVector4Set(&model.clear_colour, 0.0f, 0.0f, 0.0f, 0.0f);
 
+    byteswap_ubo(&model, sizeof(model));
     glBufferData(GL_UNIFORM_BUFFER, sizeof(model), &model, GL_STATIC_DRAW);
+    byteswap_ubo(&model, sizeof(model));
     glDrawElements(GL_TRIANGLES, groupinfo->count, GL_UNSIGNED_SHORT, groupinfo->offset);
 
     renderer->scene_stats.face_group_count++;

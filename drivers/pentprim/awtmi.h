@@ -80,7 +80,7 @@ FNAME(struct brp_block *block, union brp_vertex *a,union brp_vertex *b,union brp
     offset = high16(a->comp_x[C_SX])+high16(a->comp_x[C_SY])*((int)work.colour.stride_p);
     work.awsl.start = work.awsl.end = (char *)work.colour.base+offset*DBPP;
 #if ZB
-    work.awsl.zstart = (char *)work.depth.base +offset*2;
+    work.awsl.zstart = work.depth.base ? (char *)work.depth.base + offset * 2 : NULL;
 #endif
     work.top.count = syb-sya;
 

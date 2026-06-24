@@ -124,4 +124,11 @@ typedef struct shader_data_model {
 #ifdef __cplusplus
 };
 #endif
+
+/* UBO data must be in native byte order (OpenGL spec). No-op on all platforms. */
+static inline void byteswap_ubo(void *buf, size_t size_bytes) {
+    (void)buf;
+    (void)size_bytes;
+}
+
 #endif /* VIDEO_H_ */

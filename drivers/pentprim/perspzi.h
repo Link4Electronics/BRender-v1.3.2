@@ -333,7 +333,7 @@ FNAME(struct brp_block *block, union brp_vertex *a,union brp_vertex *b,union brp
     offset = sar16(a->comp_x[C_SX])*BPP+sar16(a->comp_x[C_SY])*work.colour.stride_b-BPP*(g_divisor<0);
     zoffset = sar16(a->comp_x[C_SX])*2+sar16(a->comp_x[C_SY])*work.depth.stride_b-2*(g_divisor<0);
     work.tsl.start = work.tsl.end = ((char *)work.colour.base)+offset;
-    work.tsl.zstart = (char *)work.depth.base+zoffset;
+    work.tsl.zstart = work.depth.base ? (char *)work.depth.base + zoffset : NULL;
 
     PARAM_SETUP_UNSIGNED(work.pz,comp_x[C_SZ]);
 

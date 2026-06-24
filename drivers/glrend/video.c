@@ -240,11 +240,7 @@ br_error VIDEOI_BrPixelmapGetTypeDetails(br_uint_8 pmType, GLint* internalFormat
         break;
     case BR_PMT_RGB_888:
         *internalFormat = GL_RGB;
-#if BR_ENDIAN_LITTLE
         *format = GL_BGR;
-#else
-        *format = GL_RGB;
-#endif
         *type = GL_UNSIGNED_BYTE;
         *elemBytes = 3;
         break;

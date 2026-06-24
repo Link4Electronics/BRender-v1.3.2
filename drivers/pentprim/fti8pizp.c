@@ -81,6 +81,7 @@ tSize_specific_params size_specific_params[] = {
 };
 
 static inline void ScanlineRender_ZPT_I8_D16(int dirn, tSize_specific_params *sized_params, int udirn, int vdirn, tFog_enabled fogging, tBlend_enabled blend) {
+    if (work.tsl.zstart == NULL) return;
     // ; Make temporary copies of parameters that change
 	// ;
 
@@ -253,7 +254,7 @@ nodraw:
 
     // cmp		edi,ecx
     // jg_&dirn    ScanlineRender_ZPT&fogging&&blend&_I8_D16_&size&_&dirn&_done
-    if (dirn == DIR_F && edi.v > ecx.v || dirn == DIR_B && edi.v < ecx.v) {
+    if (dirn == DIR_F && edi.ptr_v > ecx.ptr_v || dirn == DIR_B && edi.ptr_v < ecx.ptr_v) {
         return;
     }
 
@@ -550,6 +551,7 @@ donev:
 }
 
 static inline void ScanlineRender_ZPTI_I8_D16(int dirn, tSize_specific_params *sized_params, int udirn, int vdirn, tFog_enabled fogging, tBlend_enabled blend) {
+    if (work.tsl.zstart == NULL) return;
     // mov		edx,work.pu.current
     edx.v = work.pu.current;
     // mov		esi,work.pu.grad_x
@@ -718,7 +720,7 @@ nodraw:
     ADD_D(ebp.ptr_8, 2, dirn);
     // cmp		edi,ecx
     // jg_&dirn    ScanlineRender_ZPT&fogging&&blend&_I8_D16_&size&_&dirn&_done
-    if (dirn == DIR_F && edi.v > ecx.v || dirn == DIR_B && edi.v < ecx.v) {
+    if (dirn == DIR_F && edi.ptr_v > ecx.ptr_v || dirn == DIR_B && edi.ptr_v < ecx.ptr_v) {
         return;
     }
 
@@ -1088,7 +1090,7 @@ scan_loop:
     // mov		work.tsl.start,eax
     work.tsl.start = ((char*)work.colour.base) + eax.v;
     // mov		work.tsl.zstart,ebx
-    work.tsl.zstart = ((char*)work.depth.base) + ebx.v;
+    work.tsl.zstart = work.depth.base ? ((char*)work.depth.base) + ebx.v : NULL;
 
     // ; Fix up the error values
 	// ;
@@ -1483,7 +1485,7 @@ scan_loop:
     // mov		work.tsl.start,eax
     work.tsl.start = ((char*)work.colour.base) + eax.v;
     // mov		work.tsl.zstart,ebx
-    work.tsl.zstart = ((char*)work.depth.base) + ebx.v;
+    work.tsl.zstart = work.depth.base ? ((char*)work.depth.base) + ebx.v : NULL;
 
     // ; Fix up the error values
 	// ;

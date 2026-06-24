@@ -400,7 +400,6 @@ br_error BR_CMETHOD_DECL(br_device_pixelmap_gl, rectangleCopyTo)(br_device_pixel
     }
     case BR_PMT_INDEX_8: {
         uint32_t* buffer = BrScratchAllocate(sizeof(uint32_t) * sr->w * sr->h);
-        uint32_t* buffer_ptr = buffer;
         char* src_px = src->pm_pixels;
         uint32_t* map;
         if (src->pm_map) {
@@ -411,11 +410,14 @@ br_error BR_CMETHOD_DECL(br_device_pixelmap_gl, rectangleCopyTo)(br_device_pixel
         for (int y = sr->y; y < sr->y + sr->h; y++) {
             for (int x = sr->x; x < sr->x + sr->w; x++) {
                 int index = src_px[y * src->pm_row_bytes + x];
-                *buffer_ptr = map[index];
-                buffer_ptr++;
+                uint8_t* dst = (uint8_t*)buffer + ((y - sr->y) * sr->w + (x - sr->x)) * 4;
+                dst[0] = BR_RED(map[index]);
+                dst[1] = BR_GRN(map[index]);
+                dst[2] = BR_BLU(map[index]);
+                dst[3] = 0xff;
             }
         }
-        glTexSubImage2D(GL_TEXTURE_2D, 0, p->x, p->y, sr->w, sr->h, GL_RGB, GL_UNSIGNED_BYTE, buffer);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, p->x, p->y, sr->w, sr->h, GL_RGBA, GL_UNSIGNED_BYTE, buffer);
         BrScratchFree(buffer);
         break;
     }

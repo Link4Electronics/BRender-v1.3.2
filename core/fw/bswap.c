@@ -24,7 +24,7 @@ BR_RCS_ID("$Id: bswap.c 1.1 1997/12/10 16:41:05 jon Exp $")
 br_uint_32 BR_RESIDENT_ENTRY BrSwap32(br_uint_32 l)
 {
 	union {
-		unsigned long l;
+		br_uint_32 l;
 		unsigned char c[4];
 	} u;
 	

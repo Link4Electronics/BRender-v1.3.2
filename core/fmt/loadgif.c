@@ -114,9 +114,7 @@ br_pixelmap * BR_PUBLIC_ENTRY BrFmtGIFLoad(char *name,br_uint_32 flags)
 			if(BrFileRead(&RGB,1,sizeof(RGB),fh) != sizeof(RGB))
 				BR_ERROR1("Unable to read global palette data from '%s'",name);
 				
-			((char *)(palette->pixels))[i*4+RED] = RGB.red;
-			((char *)(palette->pixels))[i*4+GRN] = RGB.green;
-			((char *)(palette->pixels))[i*4+BLU] = RGB.blue;
+			((br_colour *)(palette->pixels))[i] = BR_COLOUR_RGB(RGB.red, RGB.green, RGB.blue);
 		}
 	}
 
@@ -159,10 +157,7 @@ br_pixelmap * BR_PUBLIC_ENTRY BrFmtGIFLoad(char *name,br_uint_32 flags)
 							if(BrFileRead(&RGB,1,sizeof(RGB),fh) != sizeof(RGB))
 								BR_ERROR1("Unable to read local palette data from '%s'",name);
 					
-							((char *)(palette->pixels))[i*4+RED] = RGB.red;
-							((char *)(palette->pixels))[i*4+GRN] = RGB.green;
-							((char *)(palette->pixels))[i*4+BLU] = RGB.blue;
-							((char *)(palette->pixels))[i*4+PAD] = 0;
+							((br_colour *)(palette->pixels))[i] = BR_COLOUR_RGB(RGB.red, RGB.green, RGB.blue);
 						}
 					}
 						

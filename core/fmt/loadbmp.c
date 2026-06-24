@@ -206,20 +206,14 @@ br_pixelmap * BR_PUBLIC_ENTRY BrFmtBMPLoad(char *name,br_uint_32 flags)
 				{
 				    	if(BrFileRead(&RGB3,1,sizeof(RGB3),fh) != sizeof(RGB3))
 						BR_ERROR1("Unable to read palette from '%s'",name);
-					((char *)(palette->pixels))[i*4+RED] = RGB3.red;
-					((char *)(palette->pixels))[i*4+GRN] = RGB3.green;
-					((char *)(palette->pixels))[i*4+BLU] = RGB3.blue;
-					((char *)(palette->pixels))[i*4+PAD] = 0;
+					((br_colour *)(palette->pixels))[i] = BR_COLOUR_RGB(RGB3.red, RGB3.green, RGB3.blue);
 	    			}
 			else
 				for(i=0; i<NumColours; i++,palettesize+=4)
 				{
 				    	if(BrFileRead(&RGB4,1,sizeof(RGB4),fh) != sizeof(RGB4))
 						BR_ERROR1("Unable to read palette from '%s'",name);
-					((char *)(palette->pixels))[i*4+RED] = RGB4.red;
-					((char *)(palette->pixels))[i*4+GRN] = RGB4.green;
-					((char *)(palette->pixels))[i*4+BLU] = RGB4.blue;
-					((char *)(palette->pixels))[i*4+PAD] = RGB4.pad;
+					((br_colour *)(palette->pixels))[i] = BR_COLOUR_RGB(RGB4.red, RGB4.green, RGB4.blue);
 				}
 
 			break;
