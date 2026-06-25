@@ -192,10 +192,7 @@ br_renderer * RendererSoftAllocate(br_device *dev, struct br_renderer_facility *
 	/*
 	 * Set valid bits from primitive library
 	 */
-	m = 0;
-	char c;
-	ObjectQuery(self->plib, &m, BRT_PARTS_U32);
-
+	m = BR_STATE_CACHE | BR_STATE_OUTPUT | BR_STATE_PRIMITIVE;
 	self->state.valid |= m;
 
 	/*
