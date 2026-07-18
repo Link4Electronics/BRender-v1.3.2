@@ -114,7 +114,7 @@ static void BR_CMETHOD_DECL(br_renderer_gl, sceneBegin)(br_renderer* self) {
     }
 
     DevicePixelmapGLGetViewport(colour_target->screen, &x, &y, &rx, &ry);
-    glViewport(colour_target->pm_base_x * rx + x, base_y *ry + y, colour_target->pm_width * rx, colour_target->pm_height * ry);
+    glViewport(colour_target->pm_base_x * rx + x, base_y * ry + y, colour_target->pm_width * rx, colour_target->pm_height * ry);
 
     /* Bind the model UBO here, it's faster than doing it for each model group */
     glBindBufferBase(GL_UNIFORM_BUFFER, hVideo->brenderProgram.blockBindingModel, hVideo->brenderProgram.uboModel);
