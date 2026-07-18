@@ -19,6 +19,8 @@
 
 BR_RCS_ID("$Id: v1model.c 1.8 1998/07/21 11:35:57 jon Exp $");
 
+extern int g_wireframe_mode;
+
 
 static void GEOMETRY_CALL V1Faces_ScratchAllocate(struct br_geometry *self, struct br_renderer *renderer)
 {
@@ -32,7 +34,7 @@ static void GEOMETRY_CALL V1Faces_ScratchAllocate(struct br_geometry *self, stru
 	scratch_size += SCRATCH_ALIGN(rend.nfaces    * sizeof(*rend.temp_faces));
 	scratch_size += SCRATCH_ALIGN(rend.nvertices * sizeof(*rend.temp_vertices));
 
-	if(rend.block->type == BRT_LINE)
+	if(rend.block->type == BRT_LINE || (rend.block->type == BRT_TRIANGLE && g_wireframe_mode))
 		scratch_size += SCRATCH_ALIGN(rend.nedges * sizeof(*rend.edge_flags));
 
 	if(rend.block->type == BRT_POINT)
@@ -63,7 +65,7 @@ static void GEOMETRY_CALL V1Faces_ScratchAllocate(struct br_geometry *self, stru
 	/*
 	 * Allocate optional scratch areas (edge and vertex flags)
 	 */
-	if(rend.block->type == BRT_LINE) {
+	if(rend.block->type == BRT_LINE || (rend.block->type == BRT_TRIANGLE && g_wireframe_mode)) {
 		rend.edge_flags = (void *)sp;
 		sp += SCRATCH_ALIGN(rend.nedges * sizeof(*rend.edge_flags));
 		memset(rend.edge_flags, 0, rend.nedges * sizeof(*rend.edge_flags));
@@ -751,6 +753,18 @@ static void GEOMETRY_CALL V1Faces_GeometryFnsUpdate(struct br_geometry *self, st
 		break;
 
 	case BRT_TRIANGLE:
+		if (g_wireframe_mode) {
+			PrimBlockAdd(renderer, (brp_render_fn *)OpLineClip);
+			PrimBlockAddBoth(renderer, (brp_render_fn *)OpTriangleToLines);
+			if (renderer->state.cache.nconstant_fns) {
+				AddReplicateConstant(self, renderer);
+				if (renderer->state.cull.type == BRT_TWO_SIDED)
+					PrimBlockAddBoth(renderer, (brp_render_fn *)OpTriangleTwoSidedConstantSurf);
+				else
+					PrimBlockAddBoth(renderer, (brp_render_fn *)OpTriangleConstantSurf);
+			}
+			break;
+		}
 
 		if(renderer->state.cache.nconstant_fns) {
 			if(rend.block->flags & BR_PRIMF_CONST_DUPLICATE)
@@ -902,7 +916,8 @@ static br_error V1Model_Render
 				 scache.valid_primitive_heap);
 
 		r = PrimitiveStateRenderBegin(renderer->state.pstate,
-			&rend.block, &rend.block_changed, &rend.range_changed, z_sort, type);
+			&rend.block, &rend.block_changed, &rend.range_changed, z_sort,
+			(g_wireframe_mode && type == BRT_TRIANGLE) ? BRT_LINE : type);
 
 		if(r != BRE_OK)
 			return r;

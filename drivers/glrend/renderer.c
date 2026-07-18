@@ -59,7 +59,10 @@ br_renderer* RendererGLAllocate(br_device* device, br_renderer_facility* facilit
     return (br_renderer*)self;
 }
 
+extern int g_wireframe_mode;
+
 static void BR_CMETHOD_DECL(br_renderer_gl, sceneBegin)(br_renderer* self) {
+    glPolygonMode(GL_FRONT_AND_BACK, g_wireframe_mode ? GL_LINE : GL_FILL);
     br_uint_16 base_y = 0;
     int x, y;
     float rx, ry;
