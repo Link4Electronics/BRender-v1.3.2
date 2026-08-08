@@ -1,6 +1,18 @@
+##ifdef VK
 #version 450
+##endif
+##ifdef GL_ES
+#version 300 es
+precision mediump float;
+precision mediump int;
+precision lowp usampler2D;
+##endif
+##ifdef GL_CORE
+#version 140
+#extension GL_ARB_explicit_attrib_location:require
+##endif
 
-#define MAX_LIGHTS                      48
+#define MAX_LIGHTS                      48 /* Must match up with BRender */
 #define MAX_CLIP_PLANES                 6
 #define SPECULARPOW_CUTOFF              0.6172
 #define BR_SCALAR_EPSILON               1.192092896e-7f
@@ -10,23 +22,27 @@
 #define DEBUG_DISABLE_LIGHT_DIRECTIONAL 0
 #define DEBUG_DISABLE_LIGHT_POINT       0
 #define DEBUG_DISABLE_LIGHT_POINTATTEN  0
-#define DEBUG_DISABLE_LIGHT_SPOT        0
+#define DEBUG_DISABLE_LIGHT_SPOT        1
 #define DEBUG_DISABLE_LIGHT_SPECULAR    0
 #define ENABLE_PSX_SIMULATION           0
 
 struct br_light
 {
-    vec4 position;
-    vec4 direction;
-    vec4 half_;
-    vec4 colour;
-    vec4 iclq;
-    vec2 spot_angles;
+    vec4 position;    /* (X, Y, Z, 1) */
+    vec4 direction;   /* (X, Y, Z, 0), normalised */
+    vec4 half_;       /* (X, Y, Z, 0), normalised */
+    vec4 colour;      /* (R, G, B, 0), normalised */
+    vec4 iclq;        /* (intensity, constant, linear, attenutation) */
+    vec2 spot_angles; /* (inner, outer), if (0.0, 0.0), then this is a point light. */
 };
 
+##ifdef VK
 layout(std140, binding = 1) uniform br_scene_state
+##else
+layout(std140) uniform br_scene_state
+##endif
 {
-    vec4 eye_view;
+    vec4 eye_view; /* Eye position in view-space */
     br_light lights[MAX_LIGHTS];
     uint num_lights;
 
@@ -37,7 +53,11 @@ layout(std140, binding = 1) uniform br_scene_state
     float yon_z;
 };
 
+##ifdef VK
 layout(std140, binding = 2) uniform br_model_state
+##else
+layout(std140) uniform br_model_state
+##endif
 {
     mat4 model_view;
     mat4 projection;
@@ -48,13 +68,13 @@ layout(std140, binding = 2) uniform br_model_state
     mat4 map_transform;
     vec4 surface_colour;
     vec4 clear_colour;
-    vec4 eye_m;
+    vec4 eye_m; /* Eye position in model-space */
 
-    float ka;
-    float ks;
-    float kd;
+    float ka; /* Ambient mod */
+    float ks; /* Specular mod (doesn't seem to be used by Croc) */
+    float kd; /* Diffuse mod */
     float power;
-    uint lighting;
+    uint lighting; /* Is this surface lit? */
     int uv_source;
     bool disable_colour_key;
     bool disable_texture;
@@ -66,21 +86,45 @@ layout(std140, binding = 2) uniform br_model_state
     uint prelit;
 };
 
+##ifdef VK
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec3 aNormal;
 layout(location = 3) in vec4 aColour;
+##else
+in vec3 aPosition;
+in vec2 aUV;
+in vec3 aNormal;
+in vec4 aColour;
+##endif
 
+##ifdef VK
 layout(location = 0) out vec4 position;
 layout(location = 1) out vec2 uv;
 layout(location = 2) out vec4 normal;
 layout(location = 3) out vec4 colour;
+##else
+out vec4 position;
+out vec4 normal;
+out vec2 uv;
+out vec4 colour;
+##endif
 
+##ifdef VK
 layout(location = 4) out vec3 rawPosition;
 layout(location = 5) out vec3 rawNormal;
+##else
+out vec3 rawPosition;
+out vec3 rawNormal;
+##endif
 
+##ifdef VK
 layout(location = 6) out vec3 v_frag_pos;
 layout(location = 7) out float v_view_z;
+##else
+out vec3 v_frag_pos;
+out float v_view_z;
+##endif
 
 bool directLightExists;
 
@@ -112,6 +156,7 @@ float calculateAttenuation(in br_light alp, in float dist)
 
 float shadingFilter(in float i)
 {
+/* Software shading emulation */
 #if ENABLE_PSX_SIMULATION
     i = floor(i * 255.0) / 255.0;
 #endif
@@ -125,10 +170,16 @@ vec3 lightingColourAmbient(in vec4 p, in vec4 n, in br_light alp)
 
 vec3 lightingColourDirect(in vec4 p, in vec4 n, in br_light alp)
 {
+    /* Notes: '_dot' is 'intensity' */
     float _dot = max(dot(n, alp.direction), 0.0) * kd;
 
+    /* Shading filters like 'toon' */
     _dot = shadingFilter(_dot);
 
+    /*
+     * -- Kludge to emulate the broken D3D lighting from v1.0 and v1.1
+     * vec3 outColour = vec3((alp.colour.x + alp.colour.y + alp.colour.z) / 3.0) * _dot;
+     */
     vec3 outColour = alp.colour.xyz * _dot;
 
 #if !DEBUG_DISABLE_LIGHT_SPECULAR
@@ -147,6 +198,7 @@ vec3 lightingColourPoint(in vec4 p, in vec4 n, in br_light alp)
     float _dot;
     vec4 dirn, dirn_norm;
 
+    /* Work out vector between point and light source */
     dirn = alp.position - p;
     dirn_norm = normalize(dirn);
 
@@ -154,14 +206,17 @@ vec3 lightingColourPoint(in vec4 p, in vec4 n, in br_light alp)
 
     _dot = max(dot(n, dirn_norm), 0.0) * kd;
 
+    /* Shading filters like 'toon' */
     _dot = shadingFilter(_dot);
 
     vec3 outColour = _dot * (alp.iclq.x * alp.colour.xyz);
 
 #if !DEBUG_DISABLE_LIGHT_SPECULAR
     if (ks != 0.0) {
+        /* Specular */
         SPECULAR_DOT();
 
+        /* Phong lighting approximation from Gems IV pg. 385 */
         if (_dot > SPECULARPOW_CUTOFF)
             outColour += SPECULAR_POWER(ks);
     }
@@ -174,10 +229,12 @@ vec3 lightingColourPointAtten(in vec4 p, in vec4 n, in br_light alp)
     float _dot;
     vec4 dirn, dirn_norm;
 
+    /* Work out vector between point and light source */
     dirn = alp.position - p;
     dirn_norm = normalize(dirn);
     _dot = ((max(dot(n, dirn_norm), 0.0) * kd));
 
+    /* Shading filters like 'toon' */
     _dot = shadingFilter(_dot);
 
     float dist = length(dirn);
@@ -187,8 +244,10 @@ vec3 lightingColourPointAtten(in vec4 p, in vec4 n, in br_light alp)
 
 #if !DEBUG_DISABLE_LIGHT_SPECULAR
     if (ks != 0.0) {
+        /* Specular */
         SPECULAR_DOT();
 
+        /* Phong lighting approximation from Gems IV pg. 385 */
         if (_dot > SPECULARPOW_CUTOFF)
             outColour += SPECULAR_POWER(ks);
     }
@@ -198,11 +257,13 @@ vec3 lightingColourPointAtten(in vec4 p, in vec4 n, in br_light alp)
 
 vec3 lightingColourSpot(in vec4 p, in vec4 n, in br_light alp)
 {
+    /* Croc doesn't use spot lights */
     return vec3(0);
 }
 
 vec3 lightingColourSpotAtten(in vec4 p, in vec4 n, in br_light alp)
 {
+    /* Croc doesn't use spot lights */
     return vec3(0);
 }
 
@@ -223,25 +284,35 @@ vec4 fragmain()
     directLightExists = false;
 
     for (uint i = 0u; i < num_lights; ++i) {
+#if !DEBUG_DISABLE_LIGHT_AMBIENT
         if(lights[i].colour.w != 0.0) {
             lightColour += lightingColourAmbient(position, normal, lights[i]);
             continue;
         }
+#endif
         if (lights[i].position.w == 0.0) {
+#if !DEBUG_DISABLE_LIGHT_DIRECTIONAL
             directLightExists = true;
             directLightColour += lightingColourDirect(position, normal, lights[i]);
+#endif
         } else {
             if (lights[i].spot_angles == vec2(0.0, 0.0)) {
                 if (lights[i].iclq.zw == vec2(0)) {
+#if !DEBUG_DISABLE_LIGHT_POINT
                     lightColour += lightingColourPoint(position, normal, lights[i]);
+#endif
                 } else {
+#if !DEBUG_DISABLE_LIGHT_POINTATTEN
                     lightColour += lightingColourPointAtten(position, normal, lights[i]);
+#endif
                 }
             } else {
+#if !DEBUG_DISABLE_LIGHT_SPOT
                 if (lights[i].iclq.zw == vec2(0))
                     lightColour += lightingColourSpot(position, normal, lights[i]);
                 else
                     lightColour += lightingColourSpotAtten(position, normal, lights[i]);
+#endif
             }
         }
     }
@@ -290,13 +361,19 @@ void main()
         colour += vec4(clear_colour.rgb, 0.0);
     }
 
+#if ENABLE_PSX_SIMULATION
+    pos = PSXify_pos(mvp * pos, vec2(200.0, 150.0));
+#else
     pos = projection * model_view * pos;
+#endif
 
+##ifdef VK
     // Match GL depth mapping: GL maps NDC z [-1,1] → depth [0,1] via (ndc+1)/2.
     // After negate_z_column near→+1 far→-1, so GL depth near→1 far→0.
     // VK has no depthRange remap, so we replicate it here:
     // depth_vk = (clip_z/clip_w + 1)/2 = (clip_z + clip_w) / (2*clip_w)
     pos.z = (pos.z + pos.w) * 0.5;
+##endif
 
     gl_Position = pos;
 }
