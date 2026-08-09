@@ -12,6 +12,11 @@
 
 BR_RCS_ID("$Id: brbegin.c 1.1 1997/12/10 16:41:03 jon Exp $")
 
+/* Debug feature flag shared by the softrend and glrend drivers (and toggled by
+ * host apps such as dethrace's ImGui debug menu). Defined here so the drivers
+ * have no link-time dependency on a particular host application. */
+int g_wireframe_mode = 0;
+
 static br_boolean active = BR_FALSE;
 
 
