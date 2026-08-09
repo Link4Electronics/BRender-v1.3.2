@@ -4,6 +4,8 @@
 #ifndef _DRV_IP_H_
 #define _DRV_IP_H_
 
+#include "commonrend.h"
+
 #ifndef NO_PROTOTYPES
 
 #ifdef __cplusplus
@@ -86,12 +88,12 @@ br_geometry_v1_buckets* GeometryV1BucketsGLAllocate(br_renderer_facility* type, 
 /*
  * gv1model.c
  */
-br_geometry_v1_model* GeometryV1ModelGLAllocate(br_renderer_facility* type, const char* id);
+br_geometry_v1_model* BREND_FN(GeometryV1Model, Allocate)(br_renderer_facility* type, const char* id);
 
 /*
  * gstored.c
  */
-br_geometry_stored* GeometryStoredGLAllocate(br_geometry_v1_model* gv1model, const char* id, br_renderer* r,
+br_geometry_stored* BREND_FN(GeometryStored, Allocate)(br_geometry_v1_model* gv1model, const char* id, br_renderer* r,
     struct v11model* model);
 
 /*
@@ -129,7 +131,12 @@ void StateGLDefault(state_all* state, uint32_t mask);
 
 void StateGLUpdateScene(state_cache* cache, state_stack* state);
 void StateGLUpdateModel(state_cache* cache, state_matrix* matrix);
+void StateGLFillModel(state_stack* state, uint32_t states, shader_data_model* model);
 void StateGLCopy(state_stack* dst, state_stack* src, uint32_t mask);
+/*
+ * v1model.c
+ */
+void StoredGLApplyProperties(HVIDEO hVideo, state_stack* state, uint32_t states, shader_data_model* model, GLuint tex_default);
 
 /*
  * renderer.c
@@ -167,13 +174,13 @@ br_uint_8 DeviceGLTypeOrBits(br_uint_8 pixel_type, br_int_32 pixel_bits);
  * Wrappers for br_device_gl_procs.
  */
 
-br_device_gl_getprocaddress_cbfn* DevicePixelmapGLGetGetProcAddress(br_device_pixelmap* self);
+void* BREND_FN(DevicePixelmap, GetGetProcAddress)(br_device_pixelmap* self);
 
-void DevicePixelmapGLGetViewport(br_device_pixelmap* self, int *x, int *y, float *width_multiplier, float *height_multiplier);
+void BREND_FN(DevicePixelmap, GetViewport)(br_device_pixelmap* self, int *x, int *y, float *width_multiplier, float *height_multiplier);
 
-void DevicePixelmapGLSwapBuffers(br_device_pixelmap* self);
+void BREND_FN(DevicePixelmap, SwapBuffers)(br_device_pixelmap* self);
 
-void DevicePixelmapGLFree(br_device_pixelmap* self);
+void BREND_FN(DevicePixelmap, Free)(br_device_pixelmap* self);
 
 /*
  * Hijack nulldev's no-op implementations.

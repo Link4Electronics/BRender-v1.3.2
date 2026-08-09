@@ -23,16 +23,16 @@ int glContextIsOpenGLES() {
 // Quick n dirty shader pre-processor
 // Wrap opengles only lines with ##ifdef GL_ES ... ##endif
 // Wrap opengl core only lines with ##ifdef GL_CORE ... ##endif
-// Wrap vulkan only lines with ##ifdef VK ... ##endif
+// Wrap SDL3GPU only lines with ##ifdef SDL3GPU ... ##endif
 // ##else selects the complementary branch of the enclosing block.
 // Note the double "##" to avoid collision with the standard glsl preprocessor
-char* preprocessShader(char* shader, size_t size) {
+char* preprocessShader(const char* shader, size_t size) {
     int i;
     char *processed;
     int line_i;
     char line[2048];
     int is_context_opengles;
-    int filter_state;  // 0 - none, 1 - GL_ES block, 2 - GL_CORE block, 3 - VK block
+    int filter_state;  // 0 - none, 1 - GL_ES block, 2 - GL_CORE block, 3 - SDL3GPU block
     int emit;          // whether the current block content should be kept
 
     line_i = 0;
@@ -54,7 +54,7 @@ char* preprocessShader(char* shader, size_t size) {
             } else if (strcmp(line, "##ifdef GL_CORE\n") == 0) {
                 filter_state = 2;
                 emit = !is_context_opengles;
-            } else if (strcmp(line, "##ifdef VK\n") == 0) {
+            } else if (strcmp(line, "##ifdef SDL3GPU\n") == 0) {
                 filter_state = 3;
                 emit = 0;
             } else if (strcmp(line, "##else\n") == 0) {
@@ -361,7 +361,8 @@ GLuint VIDEO_BrPixelmapToGLTexture(br_pixelmap* pm) {
 
 void VIDEOI_BrRectToGL(const br_pixelmap* pm, br_rectangle* r) {
     br_rectangle out;
-    PixelmapRectangleClip(&out, r, pm);
+    /* PixelmapRectangleClip only reads pm; the const cast is safe. */
+    PixelmapRectangleClip(&out, r, (br_pixelmap *)pm);
 
     /* Flip the rect upside down to use (0, 0) at bottom-left. */
     *r = out;
