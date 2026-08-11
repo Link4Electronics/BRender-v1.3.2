@@ -1,7 +1,7 @@
 /*
  * Renderer methods
  *
- * Shared by the glrend/sdl3rend drivers. All methods are identical between
+ * Shared by the glrend/sdl3gpurend drivers. All methods are identical between
  * the two backends except sceneBegin/sceneEnd (backend-specific viewport/
  * program/UBO/render-pass setup), the frameBegin clear, partSet/partSetMany
  * (GL applies template actions), and the per-backend allocate functions.
@@ -63,6 +63,20 @@ br_renderer* BREND_FN(Renderer, Allocate)(br_device* device, br_renderer_facilit
     return (br_renderer*)self;
 }
 
+/*
+ * Mirror a colour target's base_y about its containing surface's vertical
+ * extent, since both backends draw the frame inverted vs game coordinates.
+ * Full-screen targets (pm_base_y == 0) are unaffected; the non-sub path is
+ * parity-only.
+ */
+static br_uint_16 RendererFlipBaseY(br_device_pixelmap* colour_target, br_uint_16 screen_height) {
+    if (colour_target->pm_base_y == 0)
+        return 0;
+    if (colour_target->sub_pixelmap)
+        return colour_target->parent_height - colour_target->pm_height - colour_target->pm_base_y;
+    return screen_height - colour_target->pm_height - colour_target->pm_base_y;
+}
+
 static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer* self) {
     br_device_pixelmap* screen = self->pixelmap->screen;
     HVIDEO hVideo = &screen->asFront.video;
@@ -109,14 +123,8 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
         glBindBufferBase(GL_UNIFORM_BUFFER, hVideo->brenderProgram.blockBindingScene, hVideo->brenderProgram.uboScene);
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(self->state.cache.scene), &self->state.cache.scene);
 
-        // OpenGL upside downness
-        if (colour_target->pm_base_y != 0) {
-            if (colour_target->sub_pixelmap) {
-                base_y = colour_target->parent_height - colour_target->pm_height - colour_target->pm_base_y;
-            } else {
-                base_y = colour_target->pm_height - colour_target->pm_base_y;
-            }
-        }
+        /* OpenGL upside downness: mirror sub-area base_y (shared with SDL3). */
+        base_y = RendererFlipBaseY(colour_target, screen->pm_height);
 
         BREND_FN(DevicePixelmap, GetViewport)(colour_target->screen, &x, &y, &rx, &ry);
         glViewport(colour_target->pm_base_x * rx + x, base_y * ry + y, colour_target->pm_width * rx, colour_target->pm_height * ry);
@@ -133,17 +141,32 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
 #else
     {
         /* Whether this is the FIRST scene of the frame. renderingStarted is 0 at
-         * frame start (reset by SDL3REND_EnsureRecording) and set to 1 by the first
-         * sceneBegin. The mainViewport purge below must only run for that first
-         * scene: the dim quads (DimRectangle -> BrZbSceneRender) call sceneBegin
+         * frame start (reset by SDL3GPUREND_EnsureRecording) and set to 1 by the first
+         * sceneBegin. The mainViewport purge must only run for that first scene:
+         * the dim quads (DimRectangle -> BrZbSceneRender) call sceneBegin
          * mid-frame with a full-screen target, and purging there would erase the
          * post-scene 2D (headup text, damage meter, cockpit dashboard) already
          * written into lockedPixels. */
         int firstScene = !hVideo->renderingStarted;
 
+        /* Capture whether the CPU overlay was flushed before this scene began,
+         * ONCE PER FRAME (firstScene only): the mid-frame cockpit flush before
+         * the pratcam also sets overlayDirty, but re-capturing then would
+         * misclassify the racing HUD dims as overlay-primary and dim the yellow
+         * headup text. This capture is PROVISIONAL — a pre-scene flush is either
+         * a 2D-primary map image (kept) or a racing sky/fog fill (purged), and
+         * they are told apart at the first model draw of this scene. */
+        if (firstScene) {
+            hVideo->overlayPrimaryFrame = hVideo->overlayDirty;
+        } else {
+            /* A scene after the first must never run the armed purge: if the
+             * first scene drew no models the flag would otherwise fire here. */
+            hVideo->pendingMainPurge = 0;
+        }
+
         if (hVideo->sceneCount == 0) {
             if (!hVideo->isRecording) {
-                SDL3REND_EnsureRecording(hVideo);
+                SDL3GPUREND_EnsureRecording(hVideo);
             }
             hVideo->renderingStarted = 1;
 
@@ -153,15 +176,15 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
                 hVideo->primaryColourTarget = colour_target;
 
             if (!hVideo->renderPassActive) {
-                SDL3REND_BeginRenderPass(hVideo);
+                SDL3GPUREND_BeginRenderPass(hVideo);
                 hVideo->renderPassActive = 1;
             }
         }
 
         hVideo->sceneCount++;
 
-        SDL3REND_UpdateScene(hVideo, &self->state.cache.scene, sizeof(self->state.cache.scene));
-        SDL3REND_SceneBegin(hVideo);
+        SDL3GPUREND_UpdateScene(hVideo, &self->state.cache.scene, sizeof(self->state.cache.scene));
+        SDL3GPUREND_SceneBegin(hVideo);
 
         {
             int x = 0, y = 0;
@@ -170,42 +193,14 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
             int win_w = hVideo->windowWidth, win_h = hVideo->windowHeight;
 
             if (colour_target != NULL) {
-                /* Replicate the harness letterbox viewport (calculate_viewport in
-                 * sdl3.c) from the window size + screen pixelmap size so the 4:3
-                 * content is scaled aspect-preserving and centered (matching
-                 * glrend), with black pillarbox/letterbox bars when the window
-                 * shape differs. The offscreen transfer texture is window-sized,
-                 * so the viewport is in window pixels. */
-                if (screen->pm_height > 0 && win_h > 0) {
-                    float aspect = (float)win_w / (float)win_h;
-                    float target = (float)screen->pm_width / (float)screen->pm_height;
-                    int vp_width = win_w, vp_height = win_h;
-                    if (aspect > target) {
-                        vp_width = (int)((float)win_h * target + 0.5f);
-                    } else {
-                        vp_height = (int)((float)win_w / target + 0.5f);
-                    }
-                    x = (win_w - vp_width) / 2;
-                    y = (win_h - vp_height) / 2;
-                    rx = (float)vp_width / (float)screen->pm_width;
-                    ry = (float)vp_height / (float)screen->pm_height;
-                }
-                /* The present blit (SDL3REND_Present) flips the whole transfer
-                 * vertically, so a sub-area scene must render into the mirrored
-                 * transfer rows to land at its game rect on screen. This mirrors
-                 * the GL driver's base_y flip above: the full-screen scene has
-                 * pm_base_y == 0 and is unaffected; sub-areas (rear-view mirror,
-                 * 3D PIP, cockpit render window) shift so the on-screen position
-                 * matches their pm_base_y in game coordinates. The CPU-side purge
-                 * (sceneEnd) stays in game coordinates and needs no change. */
-                int32_t vp_base_y = colour_target->pm_base_y;
-                if (colour_target->pm_base_y != 0) {
-                    if (colour_target->sub_pixelmap) {
-                        vp_base_y = colour_target->parent_height - colour_target->pm_height - colour_target->pm_base_y;
-                    } else {
-                        vp_base_y = screen->pm_height - colour_target->pm_height - colour_target->pm_base_y;
-                    }
-                }
+                /* Letterbox the 4:3 screen into the window (shared helper, see
+                 * SDL3GPUREND_LetterboxViewport); transfer is window-sized. */
+                SDL3GPUREND_LetterboxViewport(win_w, win_h, screen->pm_width, screen->pm_height,
+                    &x, &y, NULL, NULL, &rx, &ry);
+                /* The present blit flips the transfer vertically, so sub-area
+                 * scenes render into mirrored rows (RendererFlipBaseY); the
+                 * CPU-side purge (sceneEnd) stays in game coordinates. */
+                int32_t vp_base_y = RendererFlipBaseY(colour_target, screen->pm_height);
                 vp_x = (float)colour_target->pm_base_x * rx + (float)x;
                 vp_y = (float)vp_base_y * ry + (float)y;
                 vp_w = (float)colour_target->pm_width * rx;
@@ -218,44 +213,68 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
             }
 
             SDL_GPUViewport gpu_viewport = {vp_x, vp_y, vp_w, vp_h, 0.0f, 1.0f};
-            SDL_SetGPUViewport(hVideo->currentPass, &gpu_viewport);
+            SDL3_SetGPUViewport(hVideo->currentPass, &gpu_viewport);
             int32_t sc_x = (int32_t)floorf(vp_x);
             int32_t sc_y = (int32_t)floorf(vp_y);
             SDL_Rect scissor = {sc_x, sc_y,
                 (int)((int32_t)ceilf(vp_x + vp_w) - sc_x),
                 (int)((int32_t)ceilf(vp_y + vp_h) - sc_y)};
-            SDL_SetGPUScissor(hVideo->currentPass, &scissor);
+            SDL3_SetGPUScissor(hVideo->currentPass, &scissor);
 
             hVideo->viewportX = (int)vp_x;
             hVideo->viewportY = (int)vp_y;
             hVideo->viewportW = (int)vp_w;
             hVideo->viewportH = (int)vp_h;
 
+            /* Sub-area scenes (rear-view mirror, wreck summary, 3D PIP) draw
+             * CPU pre-scene content (grey fills, grid lines) into lockedPixels
+             * that must persist UNDER the 3D. Snapshot that content into a
+             * background texture and draw it here, before the 3D, so it shows
+             * through where the 3D does not cover the rect. The sceneEnd purge
+             * erases the same content from the composite so it does not also
+             * appear on top of the 3D. Full-screen scenes are skipped — their
+             * pre-scene 2D is purged at firstScene and the 3D covers them.
+             * Also skipped when the CPU overlay was just flushed (overlayDirty)
+             * by a MID-FRAME flush: the rear-view mirror flush uploads the
+             * cockpit, and re-drawing it as the mirror's background would put it
+             * under the 3D inside the mirror window. This must read the per-scene
+             * flag, not overlayPrimaryFrame (once per frame), because the mirror
+             * flush happens mid-frame. The FIRST scene of the frame must still
+             * draw its background even if a flush preceded it: the wreck-gallery
+             * draw proc flushes the grey grid immediately before its (only)
+             * scene, and that grid must persist UNDER the 3D. */
+            if (colour_target != NULL &&
+                (colour_target->pm_width < screen->pm_width ||
+                 colour_target->pm_height < screen->pm_height) &&
+                !(hVideo->overlayDirty && !firstScene)) {
+                SDL3GPUREND_DrawSceneBackground(hVideo,
+                    colour_target->pm_base_x, colour_target->pm_base_y,
+                    colour_target->pm_width, colour_target->pm_height);
+            }
+
             if (colour_target != NULL &&
                 colour_target->pm_width >= screen->pm_width &&
-                colour_target->pm_height >= screen->pm_height &&
-                !SDL3REND_IsMapMode(hVideo)) {
+                colour_target->pm_height >= screen->pm_height) {
                 hVideo->mainViewportX = (int)((vp_x - (float)x) / rx);
                 hVideo->mainViewportY = (int)((vp_y - (float)y) / ry);
                 hVideo->mainViewportW = (int)(vp_w / rx);
                 hVideo->mainViewportH = (int)(vp_h / ry);
 
-                /* Purge the main scene's rect from the CPU locked buffer NOW, using
-                 * the freshly-computed rect. The old flush-time purge relied on the
-                 * previous frame's mainViewport, so it fired on 2D-only frames (ESC
-                 * pause menu) and erased the whole menu. This mirrors the sceneEnd
-                 * sub-area purge: pre-scene 2D (fog/sky fill) inside the scene rect
-                 * is erased so the 3D scene shows through; post-scene 2D drawn into
-                 * the same rect lands on the magenta and survives to the composite.
-                 * Gated on firstScene so the mid-frame dim-quad sceneBegins (which
-                 * reuse a full-screen target) don't wipe that post-scene content. */
+                /* ARM the main scene's rect purge from the CPU locked buffer, to
+                 * run at the first model draw of this first scene (see
+                 * modelrender.c). Pre-scene 2D inside the scene rect (the fog/sky
+                 * fill when the sky texture is off) is erased so the 3D scene
+                 * shows through; post-scene 2D drawn into the same rect lands on
+                 * the magenta and survives to the composite. The purge must NOT
+                 * run unconditionally here: on a 2D-primary frame the pre-scene
+                 * content is the flushed map image and the first scene is a dim
+                 * quad that dims it in place. Gated on firstScene so the mid-frame
+                 * dim-quad sceneBegins (which reuse a full-screen target) don't
+                 * wipe that post-scene content. The old flush-time purge relied
+                 * on the previous frame's mainViewport, so it fired on 2D-only
+                 * frames (ESC pause menu) and erased the whole menu. */
                 if (firstScene && hVideo->lockedPixels != NULL && hVideo->mainViewportW > 0 && hVideo->mainViewportH > 0) {
-                    int bpp = (hVideo->pm_type == BR_PMT_RGB_565 || hVideo->pm_type == BR_PMT_RGB_555) ? 2 : 4;
-                    br_uint_32 magenta = (bpp == 2) ? BR_COLOUR_565(31, 0, 31) : BR_COLOUR_RGB(255, 0, 255);
-                    SDL3REND_PurgeRect(bpp, magenta, hVideo->lockedPixels,
-                        hVideo->pm_width, hVideo->pm_height, hVideo->pm_row_bytes,
-                        hVideo->mainViewportX, hVideo->mainViewportY,
-                        hVideo->mainViewportW, hVideo->mainViewportH);
+                    hVideo->pendingMainPurge = 1;
                 }
             }
         }
@@ -311,7 +330,7 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneEnd)(br_renderer* 
                     if (hVideo->lockedPixels != NULL && hVideo->pm_width > 0) {
                         int bpp = (hVideo->pm_type == BR_PMT_RGB_565 || hVideo->pm_type == BR_PMT_RGB_555) ? 2 : 4;
                         br_uint_32 magenta = (bpp == 2) ? BR_COLOUR_565(31, 0, 31) : BR_COLOUR_RGB(255, 0, 255);
-                        SDL3REND_PurgeRect(bpp, magenta, hVideo->lockedPixels,
+                        SDL3GPUREND_PurgeRect(bpp, magenta, hVideo->lockedPixels,
                             hVideo->pm_width, hVideo->pm_height, hVideo->pm_row_bytes,
                             hVideo->clearAreas[idx].x, hVideo->clearAreas[idx].y,
                             hVideo->clearAreas[idx].w, hVideo->clearAreas[idx].h);
@@ -402,7 +421,7 @@ static br_error BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), bufferStoredNew)(br
 #if defined(BREND_DRIVER_GL)
     if ((sm = BufferStoredGLAllocate(self, use, pm, tv)) == NULL)
 #else
-    if ((sm = BufferStoredSDL3RENDAllocate(self, use, pm, tv)) == NULL)
+    if ((sm = BufferStoredSDL3GPURENDAllocate(self, use, pm, tv)) == NULL)
 #endif
         return BRE_FAIL;
 
