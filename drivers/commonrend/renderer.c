@@ -113,11 +113,12 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
 
 #if defined(BREND_DRIVER_GL)
     {
+        extern int g_wireframe_mode;
         br_uint_16 base_y = 0;
         int x, y;
         float rx, ry;
 
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glPolygonMode(GL_FRONT_AND_BACK, g_wireframe_mode ? GL_LINE : GL_FILL);
 
         glUseProgram(hVideo->brenderProgram.program);
         glBindBufferBase(GL_UNIFORM_BUFFER, hVideo->brenderProgram.blockBindingScene, hVideo->brenderProgram.uboScene);
@@ -193,10 +194,13 @@ static void BREND_CMETHOD_DECL(BREND_CLASS(br_renderer), sceneBegin)(br_renderer
             int win_w = hVideo->windowWidth, win_h = hVideo->windowHeight;
 
             if (colour_target != NULL) {
-                /* Letterbox the 4:3 screen into the window (shared helper, see
-                 * SDL3GPUREND_LetterboxViewport); transfer is window-sized. */
-                SDL3GPUREND_LetterboxViewport(win_w, win_h, screen->pm_width, screen->pm_height,
-                    &x, &y, NULL, NULL, &rx, &ry);
+                /* Map the game screen into the window: plain 4:3 letterbox, or
+                 * the glrend-style full-window stretch when the harness reports
+                 * a widescreen viewport override (see
+                 * SDL3GPUREND_ViewportTransform). */
+                SDL3GPUREND_ViewportTransform(hVideo, win_w, win_h,
+                    screen->pm_width, screen->pm_height,
+                    &x, &y, &rx, &ry);
                 /* The present blit flips the transfer vertically, so sub-area
                  * scenes render into mirrored rows (RendererFlipBaseY); the
                  * CPU-side purge (sceneEnd) stays in game coordinates. */

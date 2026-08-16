@@ -26,7 +26,7 @@
 #define SDL3GPUREND_OVERLAY_QUAD_INDICES 6
 
 static HVIDEO g_sdl3gpurend_video = NULL;
-static void (*g_sdl3gpurend_external_cb)(void* cmd, void* ud) = NULL;
+static void (*g_sdl3gpurend_external_cb)(void* cmd, void* swapchain_texture, uint32_t w, uint32_t h, void* ud) = NULL;
 static void* g_sdl3gpurend_external_ud = NULL;
 
 static void WaitFence(SDL_GPUDevice* device, SDL_GPUFence* fence) {
@@ -508,6 +508,7 @@ HVIDEO SDL3GPUREND_VideoOpen(HVIDEO hVideo, void* parent,
 
     if (callbacks) {
         hVideo->get_window_size = callbacks->get_window_size;
+        hVideo->get_viewport = callbacks->get_viewport;
     }
 
     /* Fall back to the embedded sources (sdl3_shaders.c) when the caller does
@@ -1039,7 +1040,7 @@ int SDL3GPUREND_Present(HVIDEO hVideo) {
     }
 
     if (g_sdl3gpurend_external_cb)
-        g_sdl3gpurend_external_cb(hVideo->commandBuffer, g_sdl3gpurend_external_ud);
+        g_sdl3gpurend_external_cb(hVideo->commandBuffer, swapchainTexture, sw, sh, g_sdl3gpurend_external_ud);
 
     hVideo->frameFence[f] = SDL3_SubmitGPUCommandBufferAndAcquireFence(hVideo->commandBuffer);
     if (!hVideo->frameFence[f])
@@ -1077,6 +1078,24 @@ void SDL3GPUREND_LetterboxViewport(int win_w, int win_h, int pm_w, int pm_h,
     if (ry) *ry = (pm_h > 0 && vp_height > 0) ? (float)vp_height / (float)pm_h : 1.0f;
 }
 
+void SDL3GPUREND_ViewportTransform(HVIDEO hVideo, int win_w, int win_h,
+    int pm_w, int pm_h, int* vp_x, int* vp_y, float* rx, float* ry) {
+    int x = 0, y = 0;
+    float rxx = 1.0f, ryy = 1.0f;
+    if (hVideo->get_viewport) {
+        /* glrend parity: the harness callback reports the letterbox offset and
+         * scale, with the widescreen override applied (full window width). */
+        hVideo->get_viewport(&x, &y, &rxx, &ryy);
+    } else {
+        SDL3GPUREND_LetterboxViewport(win_w, win_h, pm_w, pm_h,
+            &x, &y, NULL, NULL, &rxx, &ryy);
+    }
+    if (vp_x) *vp_x = x;
+    if (vp_y) *vp_y = y;
+    if (rx) *rx = rxx;
+    if (ry) *ry = ryy;
+}
+
 void SDL3GPUREND_OverlayDraw(HVIDEO hVideo) {
     if (!hVideo->renderPassActive || !hVideo->currentPass) return;
     if (!hVideo->overlayDirty) return;
@@ -1088,20 +1107,21 @@ void SDL3GPUREND_OverlayDraw(HVIDEO hVideo) {
     viewport.max_depth = 1.0f;
     SDL_Rect scissor = {0, 0, hVideo->windowWidth, hVideo->windowHeight};
     {
-        /* Same letterbox as the scene viewport: centre the 4:3 overlay in the
-         * window, matching glrend. Overlay texture is game-screen sized. */
-        int vp_x, vp_y, vp_width, vp_height;
-        SDL3GPUREND_LetterboxViewport(hVideo->windowWidth, hVideo->windowHeight,
-            hVideo->pm_width, hVideo->pm_height,
-            &vp_x, &vp_y, &vp_width, &vp_height, NULL, NULL);
+        /* Same viewport as the scene: letterbox (or, in widescreen mode, the
+         * full-window stretch) applied to the game-screen-sized overlay,
+         * matching glrend. Overlay texture is game-screen sized. */
+        int vp_x, vp_y;
+        float rx, ry;
+        SDL3GPUREND_ViewportTransform(hVideo, hVideo->windowWidth, hVideo->windowHeight,
+            hVideo->pm_width, hVideo->pm_height, &vp_x, &vp_y, &rx, &ry);
         viewport.x = (float)vp_x;
         viewport.y = (float)vp_y;
-        viewport.w = (float)vp_width;
-        viewport.h = (float)vp_height;
+        viewport.w = (float)hVideo->pm_width * rx;
+        viewport.h = (float)hVideo->pm_height * ry;
         scissor.x = vp_x;
         scissor.y = vp_y;
-        scissor.w = vp_width;
-        scissor.h = vp_height;
+        scissor.w = (int)((float)hVideo->pm_width * rx);
+        scissor.h = (int)((float)hVideo->pm_height * ry);
     }
     SDL3_SetGPUViewport(pass, &viewport);
     SDL3_SetGPUScissor(pass, &scissor);
@@ -1355,7 +1375,7 @@ void SDL3GPUREND_GetDeviceInfo(SDL3GPUREND_DeviceInfo* info) {
     info->swapchain_texture_format = (uint32_t)g_sdl3gpurend_video->swapchainTextureFormat;
 }
 
-void SDL3GPUREND_SetExternalRenderCallback(void (*cb)(void* cmd, void* ud), void* ud) {
+void SDL3GPUREND_SetExternalRenderCallback(void (*cb)(void* cmd, void* swapchain_texture, uint32_t w, uint32_t h, void* ud), void* ud) {
     g_sdl3gpurend_external_cb = cb;
     g_sdl3gpurend_external_ud = ud;
 }

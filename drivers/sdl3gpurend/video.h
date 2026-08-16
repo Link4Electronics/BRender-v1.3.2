@@ -255,9 +255,13 @@ typedef struct _VIDEO {
 
     /* Host-side hooks copied from br_device_sdl3gpu_callback_procs at
      * SDL3GPUREND_VideoOpen. Optional — the driver tolerates NULL (no resize
-     * detection), which is what keeps the driver buildable/runnable outside
-     * dethrace. */
+     * detection, which is what keeps the driver buildable/runnable outside
+     * dethrace). */
     br_device_sdl3gpu_get_window_size_cbfn   *get_window_size;
+    /* Viewport query hook. glrend parity: the harness applies the widescreen
+     * viewport override here, so the scene/overlay/text viewports stretch to
+     * the full window width instead of the plain 4:3 letterbox. */
+    br_device_sdl3gpu_getviewport_cbfn       *get_viewport;
 } VIDEO, *HVIDEO;
 
 static inline void SDL3GPUREND_GetWindowSize(HVIDEO hVideo, int* width, int* height) {
@@ -345,6 +349,15 @@ void SDL3GPUREND_OverlayDraw(HVIDEO hVideo);
  * sceneBegin and the overlay draw. */
 void SDL3GPUREND_LetterboxViewport(int win_w, int win_h, int pm_w, int pm_h,
     int* vp_x, int* vp_y, int* vp_w, int* vp_h, float* rx, float* ry);
+
+/* Viewport query shared by sceneBegin, the overlay draw and the text path.
+ * When the host installed a get_viewport callback (glrend parity) it is used
+ * verbatim — the harness applies the widescreen override there (full window
+ * width, letterboxed height). Otherwise falls back to the plain 4:3 letterbox
+ * of SDL3GPUREND_LetterboxViewport. Returns the offset (x, y) and the scale
+ * factors (rx, ry) mapping game pixels to the window viewport. */
+void SDL3GPUREND_ViewportTransform(HVIDEO hVideo, int win_w, int win_h,
+    int pm_w, int pm_h, int* vp_x, int* vp_y, float* rx, float* ry);
 
 /* Snapshot the colour_target rect (gx,gy,gw,gh) of the CPU locked buffer
  * (lockedPixels) into a pooled BGRA texture and draw it as an opaque quad

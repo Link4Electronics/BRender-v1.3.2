@@ -24,11 +24,19 @@ typedef struct SDL3GPUREND_DeviceInfo {
 void SDL3GPUREND_GetDeviceInfo(SDL3GPUREND_DeviceInfo* info);
 
 /*
- * External render callback, invoked inside the driver's frame while a
- * command buffer is active. The first argument is the active
- * SDL_GPUCommandBuffer*; the second is the opaque user pointer.
+ * External render callback, invoked inside the driver's frame after the
+ * swapchain texture has been acquired and the offscreen frame has been
+ * blitted into it. Arguments:
+ *   cmd                -> active SDL_GPUCommandBuffer*
+ *   swapchain_texture  -> SDL_GPUTexture* of the acquired swapchain texture
+ *                         (NULL if none was acquired this frame)
+ *   w, h               -> swapchain texture size in pixels
+ *   ud                 -> opaque user pointer
+ *
+ * The callback may begin its own render pass against swapchain_texture
+ * (e.g. an ImGui overlay) before the command buffer is submitted.
  */
-void SDL3GPUREND_SetExternalRenderCallback(void (*cb)(void* cmd, void* ud), void* ud);
+void SDL3GPUREND_SetExternalRenderCallback(void (*cb)(void* cmd, void* swapchain_texture, uint32_t w, uint32_t h, void* ud), void* ud);
 
 #ifdef __cplusplus
 }

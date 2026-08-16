@@ -724,24 +724,25 @@ br_error BR_CMETHOD(br_device_pixelmap_sdl3gpurend, text)(br_device_pixelmap* se
         return BRE_OK;
     pass = hVideo->currentPass;
 
-    /* The game screen may be letterboxed in a larger window; text is drawn in
-     * game pixels so clip and position it to the game-screen viewport. */
+    /* The game screen may be letterboxed in a larger window (or stretched to
+     * the full width in widescreen mode); text is drawn in game pixels so clip
+     * and position it to the game-screen viewport. */
     {
         SDL_GPUViewport viewport = {0};
         SDL_Rect scissor = {0, 0, hVideo->windowWidth, hVideo->windowHeight};
-        int vp_x, vp_y, vp_width, vp_height;
+        int vp_x, vp_y;
+        float rx, ry;
         viewport.max_depth = 1.0f;
-        SDL3GPUREND_LetterboxViewport(hVideo->windowWidth, hVideo->windowHeight,
-            self->pm_width, self->pm_height,
-            &vp_x, &vp_y, &vp_width, &vp_height, NULL, NULL);
+        SDL3GPUREND_ViewportTransform(hVideo, hVideo->windowWidth, hVideo->windowHeight,
+            self->pm_width, self->pm_height, &vp_x, &vp_y, &rx, &ry);
         viewport.x = (float)vp_x;
         viewport.y = (float)vp_y;
-        viewport.w = (float)vp_width;
-        viewport.h = (float)vp_height;
+        viewport.w = (float)self->pm_width * rx;
+        viewport.h = (float)self->pm_height * ry;
         scissor.x = vp_x;
         scissor.y = vp_y;
-        scissor.w = vp_width;
-        scissor.h = vp_height;
+        scissor.w = (int)((float)self->pm_width * rx);
+        scissor.h = (int)((float)self->pm_height * ry);
         SDL3_SetGPUViewport(pass, &viewport);
         SDL3_SetGPUScissor(pass, &scissor);
     }
