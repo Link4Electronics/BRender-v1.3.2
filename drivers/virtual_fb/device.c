@@ -27,7 +27,7 @@ static const char deviceProduct[] = "VirtualFB VGA";
 
 #define _F(f) offsetof(br_device, f)
 #define _A(f) ((br_int_32)(f))
-static const struct br_tv_template_entry deviceTemplateEntries[] = {
+static struct br_tv_template_entry deviceTemplateEntries[] = {
     {
         BRT_IDENTIFIER_CSTR,
         0,

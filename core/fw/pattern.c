@@ -49,9 +49,9 @@ BR_RCS_ID("$Id: pattern.c 1.1 1997/12/10 16:41:09 jon Exp $")
 #define MATCH_CHAR(a,b) ((a) == (b))
 #endif
 
-br_boolean BR_RESIDENT_ENTRY BrNamePatternMatch(char *p, char *s)
+br_boolean BR_RESIDENT_ENTRY BrNamePatternMatch(const char *p, const char *s)
 {
-	char *cp;
+	const char *cp;
 
 	/*
 	 * A NULL pattern matches everything

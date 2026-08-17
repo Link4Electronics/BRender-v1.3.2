@@ -451,7 +451,7 @@ br_error BR_RESIDENT_ENTRY BrRendererFacilityListFind(br_renderer_facility **prf
 		{ BRT_ALTERNATIVE_TO_DEFAULT_B, { BR_TRUE } },
 		{ BR_NULL_TOKEN , { 0 } }
 	};
-	char *identifier;
+	const char *identifier;
 	br_size_t identifier_len;
 
 	UASSERT(prf != NULL);
@@ -722,7 +722,7 @@ br_error BR_RESIDENT_ENTRY BrPrimitiveLibraryListFind(br_primitive_library **ppl
 		{ BRT_ALTERNATIVE_TO_DEFAULT_B, { BR_TRUE } },
 		{ BR_NULL_TOKEN ,  {  0 }}
 	};
-	char *identifier;
+	const char *identifier;
 	br_size_t identifier_len;
 
 	UASSERT(ppl != NULL);

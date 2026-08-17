@@ -13,14 +13,14 @@ BR_RCS_ID("$Id: devclut.c 1.1 1997/12/10 16:45:31 jon Exp $");
 /*
  * Default dispatch table for device_clut (defined at end of file)
  */
-static const struct br_device_clut_dispatch deviceClutDispatch;
+static struct br_device_clut_dispatch deviceClutDispatch;
 
 /*
  * Renderer info. template
  */
 #define F(f) offsetof(struct br_device_clut, f)
 
-static const struct br_tv_template_entry deviceClutTemplateEntries[] = {
+static struct br_tv_template_entry deviceClutTemplateEntries[] = {
     {
         BRT_IDENTIFIER_CSTR,
         0,
@@ -158,7 +158,7 @@ static br_error BR_CMETHOD_DECL(br_device_clut_virtualfb, entryQueryMany)(br_dev
 /*
  * Default dispatch table for device CLUT
  */
-static const struct br_device_clut_dispatch deviceClutDispatch = {
+static struct br_device_clut_dispatch deviceClutDispatch = {
     NULL,
     NULL,
     NULL,

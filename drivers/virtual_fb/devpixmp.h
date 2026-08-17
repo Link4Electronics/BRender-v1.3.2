@@ -21,7 +21,7 @@ typedef struct br_device_pixelmap {
     /*
      * Standard handle identifier
      */
-    char* pm_identifier;
+    const char* pm_identifier;
 
     /** Standard pixelmap members (not including identifier**/
 

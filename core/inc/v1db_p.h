@@ -469,7 +469,7 @@ typedef struct br_rendfcty_desc {
 
 } br_rendfcty_desc;
 
-typedef br_boolean BR_CALLBACK br_rendfcty_enum_cbfn(char *identifier,
+typedef br_boolean BR_CALLBACK br_rendfcty_enum_cbfn(const char *identifier,
     br_rendfcty_desc *desc, void *args);
 
 /*
@@ -486,7 +486,7 @@ typedef struct br_primlib_desc {
 
 } br_primlib_desc;
 
-typedef br_boolean BR_CALLBACK br_primlib_enum_cbfn(char *identifier,
+typedef br_boolean BR_CALLBACK br_primlib_enum_cbfn(const char *identifier,
     br_primlib_desc *desc, void *args);
 
 /*

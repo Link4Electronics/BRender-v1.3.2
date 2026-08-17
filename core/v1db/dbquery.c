@@ -16,7 +16,7 @@ BR_RCS_ID("$Id: dbquery.c 1.1 1997/12/10 16:41:29 jon Exp $")
 static br_boolean rendfctyEnum(br_object *rendfcty, br_rendfcty_enum_cbfn *cbfn,
                               void *args)
 {
-    char *identifier = NULL;
+    const char *identifier = NULL;
     br_rendfcty_desc desc;
 
     identifier = ObjectIdentifier(rendfcty);
@@ -55,7 +55,7 @@ br_error BR_PUBLIC_ENTRY BrRendererFacilityEnum(br_pixelmap *destination,
 static br_boolean primlibEnum(br_object *primlib, br_primlib_enum_cbfn *cbfn,
                               void *args)
 {
-    char *identifier = NULL;
+    const char *identifier = NULL;
     br_primlib_desc desc;
 
     identifier = ObjectIdentifier(primlib);
