@@ -197,22 +197,26 @@ void StoredGLApplyProperties(HVIDEO hVideo, state_stack* state, uint32_t states,
 
         GLenum minFilter, magFilter;
         GLfloat maxAnisotropy;
+        extern int gAnisotropy_level;
+        if (gAnisotropy_level > 0 && GLAD_GL_EXT_texture_filter_anisotropic) {
+            maxAnisotropy = (GLfloat)gAnisotropy_level;
+            if (maxAnisotropy > hVideo->maxAnisotropy)
+                maxAnisotropy = hVideo->maxAnisotropy;
+        } else {
+            maxAnisotropy = 1.0f;
+        }
         if (filter_linear && state->prim.mip_filter == BRT_LINEAR) {
             minFilter = GL_LINEAR_MIPMAP_LINEAR;
             magFilter = GL_LINEAR;
-            maxAnisotropy = hVideo->maxAnisotropy;
         } else if (filter_linear && state->prim.mip_filter == BRT_NONE) {
             minFilter = GL_LINEAR;
             magFilter = GL_LINEAR;
-            maxAnisotropy = 1.0f;
         } else if (!filter_linear && state->prim.mip_filter == BRT_LINEAR) {
             minFilter = GL_NEAREST_MIPMAP_NEAREST;
             magFilter = GL_NEAREST;
-            maxAnisotropy = hVideo->maxAnisotropy;
         } else if (!filter_linear && state->prim.mip_filter == BRT_NONE) {
             minFilter = GL_NEAREST;
             magFilter = GL_NEAREST;
-            maxAnisotropy = 1.0f;
         } else {
             assert(0);
         }

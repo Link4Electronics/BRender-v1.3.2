@@ -77,16 +77,16 @@ void StoredSDL3GPURENDApplyProperties(HVIDEO hVideo, state_stack* state, uint32_
         BufferStoredSDL3GPURENDReupload(colour_map);
         if (colour_map->image != NULL && colour_map->sampler != NULL) {
             *texture = colour_map->image;
-            *sampler = filter_linear ? hVideo->samplerLinear : hVideo->samplerNearest;
+            *sampler = filter_linear ? SDL3GPUREND_GetAnisoSampler(hVideo) : hVideo->samplerNearest;
         } else {
             model->disable_texture = 1;
             model->disable_colour_key = 1;
 
             *texture = hVideo->defaultTexture;
-            *sampler = hVideo->samplerLinear;
+            *sampler = SDL3GPUREND_GetAnisoSampler(hVideo);
         }
     } else {
         *texture = hVideo->defaultTexture;
-        *sampler = hVideo->samplerLinear;
+        *sampler = SDL3GPUREND_GetAnisoSampler(hVideo);
     }
 }

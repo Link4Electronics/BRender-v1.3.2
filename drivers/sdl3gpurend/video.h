@@ -247,6 +247,7 @@ typedef struct _VIDEO {
     /* Default / fallback resources. */
     SDL_GPUTexture* defaultTexture;
     SDL_GPUSampler* samplerLinear;
+    SDL_GPUSampler* samplerAniso[5]; /* 0=off(1x), 1=2x, 2=4x, 3=8x, 4=16x */
     SDL_GPUSampler* samplerNearest;
 
     shader_data_scene sceneData;
@@ -392,6 +393,9 @@ int SDL3GPUREND_UploadBufferToBuffer(HVIDEO hVideo, SDL_GPUBuffer* buffer,
  * lists needed (unlike the VK driver's manual memory management). */
 void SDL3GPUREND_DeferFreeImage(HVIDEO hVideo, SDL_GPUTexture* texture, SDL_GPUSampler* sampler);
 void SDL3GPUREND_DeferFreeBuffer(HVIDEO hVideo, SDL_GPUBuffer* buffer);
+
+/* Returns the appropriate anisotropic linear sampler based on gAnisotropy_level. */
+SDL_GPUSampler* SDL3GPUREND_GetAnisoSampler(HVIDEO hVideo);
 
 /* Fills a screen-space rectangle in the CPU locked buffer with the transparent
  * magenta sentinel so it isn't composited over GPU-rendered content. */

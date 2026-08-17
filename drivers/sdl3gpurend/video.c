@@ -18,6 +18,8 @@
 #include "sdl3gpurend_shader_formats.h"
 #include "video.h"
 
+extern int gAnisotropy_level;
+
 #define SDL3GPUREND_DEFAULT_RING_VBO_CAPACITY (512 * 1024)
 #define SDL3GPUREND_DEFAULT_RING_IBO_CAPACITY (256 * 1024)
 #define SDL3GPUREND_DEFAULT_STAGING_CAPACITY  (16 * 1024 * 1024)
@@ -83,9 +85,23 @@ static int CreateSamplers(HVIDEO hVideo) {
         return 0;
     }
 
+    /* Create anisotropic samplers: index 0=1x(off), 1=2x, 2=4x, 3=8x, 4=16x */
+    static const float anisoLevels[] = {1.0f, 2.0f, 4.0f, 8.0f, 16.0f};
+    for (int i = 0; i < 5; i++) {
+        si.enable_anisotropy = (anisoLevels[i] > 1.0f);
+        si.max_anisotropy = anisoLevels[i];
+        hVideo->samplerAniso[i] = SDL3_CreateGPUSampler(hVideo->device, &si);
+        if (!hVideo->samplerAniso[i]) {
+            BR_FATAL("SDL3GPU: Failed to create aniso sampler.");
+            return 0;
+        }
+    }
+
     si.min_filter = SDL_GPU_FILTER_NEAREST;
     si.mag_filter = SDL_GPU_FILTER_NEAREST;
     si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    si.enable_anisotropy = false;
+    si.max_anisotropy = 0.0f;
     hVideo->samplerNearest = SDL3_CreateGPUSampler(hVideo->device, &si);
     if (!hVideo->samplerNearest) {
         BR_FATAL("SDL3GPU: Failed to create nearest sampler.");
@@ -94,6 +110,18 @@ static int CreateSamplers(HVIDEO hVideo) {
 
     hVideo->overlaySampler = hVideo->samplerLinear;
     return 1;
+}
+
+SDL_GPUSampler* SDL3GPUREND_GetAnisoSampler(HVIDEO hVideo) {
+    int idx;
+    switch (gAnisotropy_level) {
+    case 2:  idx = 1; break;
+    case 4:  idx = 2; break;
+    case 8:  idx = 3; break;
+    case 16: idx = 4; break;
+    default: idx = 0; break;
+    }
+    return hVideo->samplerAniso[idx];
 }
 
 static int CreateDefaultTexture(HVIDEO hVideo) {
@@ -727,6 +755,9 @@ cleanup:
     if (hVideo->overlayQuadIbo) { SDL3_ReleaseGPUBuffer(hVideo->device, hVideo->overlayQuadIbo); hVideo->overlayQuadIbo = NULL; }
     if (hVideo->overlayQuadVbo) { SDL3_ReleaseGPUBuffer(hVideo->device, hVideo->overlayQuadVbo); hVideo->overlayQuadVbo = NULL; }
     if (hVideo->samplerNearest) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerNearest); hVideo->samplerNearest = NULL; }
+    for (int i = 0; i < 5; i++) {
+        if (hVideo->samplerAniso[i]) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerAniso[i]); hVideo->samplerAniso[i] = NULL; }
+    }
     if (hVideo->samplerLinear) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerLinear); hVideo->samplerLinear = NULL; }
     if (hVideo->depthTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->depthTexture); hVideo->depthTexture = NULL; }
     if (hVideo->transferTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->transferTexture); hVideo->transferTexture = NULL; }
@@ -783,6 +814,9 @@ void SDL3GPUREND_VideoClose(HVIDEO hVideo) {
     if (hVideo->overlayQuadIbo) { SDL3_ReleaseGPUBuffer(hVideo->device, hVideo->overlayQuadIbo); hVideo->overlayQuadIbo = NULL; }
     if (hVideo->overlayQuadVbo) { SDL3_ReleaseGPUBuffer(hVideo->device, hVideo->overlayQuadVbo); hVideo->overlayQuadVbo = NULL; }
     if (hVideo->samplerNearest) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerNearest); hVideo->samplerNearest = NULL; }
+    for (int i = 0; i < 5; i++) {
+        if (hVideo->samplerAniso[i]) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerAniso[i]); hVideo->samplerAniso[i] = NULL; }
+    }
     if (hVideo->samplerLinear) { SDL3_ReleaseGPUSampler(hVideo->device, hVideo->samplerLinear); hVideo->samplerLinear = NULL; }
     if (hVideo->depthTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->depthTexture); hVideo->depthTexture = NULL; }
     if (hVideo->transferTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->transferTexture); hVideo->transferTexture = NULL; }
