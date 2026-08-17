@@ -19,6 +19,7 @@
 #include "video.h"
 
 extern int gAnisotropy_level;
+extern int g3window_cockpit;
 
 #define SDL3GPUREND_DEFAULT_RING_VBO_CAPACITY (512 * 1024)
 #define SDL3GPUREND_DEFAULT_RING_IBO_CAPACITY (256 * 1024)
@@ -821,12 +822,69 @@ void SDL3GPUREND_VideoClose(HVIDEO hVideo) {
     if (hVideo->depthTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->depthTexture); hVideo->depthTexture = NULL; }
     if (hVideo->transferTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->transferTexture); hVideo->transferTexture = NULL; }
 
+    /* Destroy aux windows before releasing the GPU device. */
+    SDL3GPUREND_AuxWindowsDestroy(hVideo);
+
     if (hVideo->window) SDL3_ReleaseWindowFromGPUDevice(hVideo->device, hVideo->window);
     SDL3_DestroyGPUDevice(hVideo->device);
     hVideo->device = NULL;
     hVideo->window = NULL;
 
     if (g_sdl3gpurend_video == hVideo) g_sdl3gpurend_video = NULL;
+}
+
+int SDL3GPUREND_AuxWindowsCreate(HVIDEO hVideo, int width, int height) {
+    if (!hVideo || !hVideo->device) return -1;
+    if (hVideo->auxWindowsActive) return 0;
+
+    const char* names[2] = { "Left View", "Right View" };
+    int main_x, main_y, main_w, main_h;
+    SDL3_GetWindowPosition(hVideo->window, &main_x, &main_y);
+    SDL3_GetWindowSize(hVideo->window, &main_w, &main_h);
+
+    for (int i = 0; i < 2; i++) {
+        int wx = (i == 0) ? main_x - main_w - 10 : main_x + main_w + 10;
+        int wy = main_y;
+        hVideo->auxWindows[i] = SDL3_CreateWindow(names[i], width, height,
+            SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+        if (!hVideo->auxWindows[i]) {
+            BrLogPrintf("SDL3GPU: Failed to create aux window %d: %s\n", i, SDL3_GetError());
+            SDL3GPUREND_AuxWindowsDestroy(hVideo);
+            return -1;
+        }
+        SDL3_SetWindowPosition(hVideo->auxWindows[i], wx, wy);
+        if (!SDL3_ClaimWindowForGPUDevice(hVideo->device, hVideo->auxWindows[i])) {
+            BrLogPrintf("SDL3GPU: Failed to claim aux window %d for GPU device: %s\n", i, SDL3_GetError());
+            SDL3_DestroyWindow(hVideo->auxWindows[i]);
+            hVideo->auxWindows[i] = NULL;
+            SDL3GPUREND_AuxWindowsDestroy(hVideo);
+            return -1;
+        }
+        SDL3_ShowWindow(hVideo->auxWindows[i]);
+    }
+    hVideo->auxWindowsActive = 1;
+    return 0;
+}
+
+void SDL3GPUREND_AuxWindowsDestroy(HVIDEO hVideo) {
+    if (!hVideo) return;
+    for (int i = 0; i < 2; i++) {
+        if (hVideo->auxWindows[i]) {
+            SDL3_WaitForGPUIdle(hVideo->device);
+            SDL3_ReleaseWindowFromGPUDevice(hVideo->device, hVideo->auxWindows[i]);
+            SDL3_DestroyWindow(hVideo->auxWindows[i]);
+            hVideo->auxWindows[i] = NULL;
+        }
+    }
+    hVideo->auxWindowsActive = 0;
+}
+
+void SDL3GPUREND_SetAuxRenderCallback(HVIDEO hVideo,
+    void (*cb)(int viewIndex, void* ud), void* ud) {
+    HVIDEO v = hVideo ? hVideo : g_sdl3gpurend_video;
+    if (!v) return;
+    v->auxRenderCb = cb;
+    v->auxRenderUd = ud;
 }
 
 void SDL3GPUREND_VideoResize(HVIDEO hVideo) {
@@ -1007,6 +1065,14 @@ int SDL3GPUREND_Present(HVIDEO hVideo) {
     uint32_t f = hVideo->currentFrame;
     SDL_GPUDevice* device = hVideo->device;
 
+    /* Handle deferred aux window toggle. */
+    if (g3window_cockpit != hVideo->auxWindowsActive) {
+        if (g3window_cockpit)
+            SDL3GPUREND_AuxWindowsCreate(hVideo, hVideo->windowWidth, hVideo->windowHeight);
+        else
+            SDL3GPUREND_AuxWindowsDestroy(hVideo);
+    }
+
     if (hVideo->renderPassActive)
         SDL3GPUREND_EndRenderPass(hVideo);
 
@@ -1075,6 +1141,45 @@ int SDL3GPUREND_Present(HVIDEO hVideo) {
 
     if (g_sdl3gpurend_external_cb)
         g_sdl3gpurend_external_cb(hVideo->commandBuffer, swapchainTexture, sw, sh, g_sdl3gpurend_external_ud);
+
+    /* 3. Aux windows: render left/right cockpit views and blit to aux
+     * swapchains. Each aux scene renders into transferTexture via the game
+     * code's callback (BrZbSceneRenderBegin/End), then we blit to the aux
+     * window's swapchain texture. */
+    if (hVideo->auxWindowsActive && hVideo->auxRenderCb) {
+        for (int i = 0; i < 2; i++) {
+            if (!hVideo->auxWindows[i]) continue;
+
+            /* Ensure no render pass is active before the callback. */
+            SDL3GPUREND_EndRenderPass(hVideo);
+
+            /* The callback renders the scene into transferTexture via
+             * BrZbSceneRenderBegin/End (which triggers BeginRenderPass). */
+            hVideo->auxRenderCb(i, hVideo->auxRenderUd);
+
+            /* End the render pass opened by the callback. */
+            SDL3GPUREND_EndRenderPass(hVideo);
+
+            /* Blit transferTexture to the aux window's swapchain. */
+            SDL_GPUTexture* auxSwapchainTex = NULL;
+            Uint32 aw = 0, ah = 0;
+            if (SDL3_AcquireGPUSwapchainTexture(hVideo->commandBuffer, hVideo->auxWindows[i], &auxSwapchainTex, &aw, &ah)) {
+                if (auxSwapchainTex) {
+                    SDL_GPUBlitInfo blit = {0};
+                    blit.source.texture = hVideo->transferTexture;
+                    blit.source.w = hVideo->windowWidth;
+                    blit.source.h = hVideo->windowHeight;
+                    blit.destination.texture = auxSwapchainTex;
+                    blit.destination.w = aw;
+                    blit.destination.h = ah;
+                    blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+                    blit.filter = SDL_GPU_FILTER_LINEAR;
+                    blit.flip_mode = SDL_FLIP_VERTICAL;
+                    SDL3_BlitGPUTexture(hVideo->commandBuffer, &blit);
+                }
+            }
+        }
+    }
 
     hVideo->frameFence[f] = SDL3_SubmitGPUCommandBufferAndAcquireFence(hVideo->commandBuffer);
     if (!hVideo->frameFence[f])

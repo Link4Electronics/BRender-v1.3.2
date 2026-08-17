@@ -64,7 +64,10 @@
       (SDL_GPUDevice* device, const SDL_GPUTextureCreateInfo* createinfo))  \
     X(CreateGPUTransferBuffer, SDL_GPUTransferBuffer*,                      \
       (SDL_GPUDevice* device, const SDL_GPUTransferBufferCreateInfo* createinfo)) \
+    X(CreateWindow, SDL_Window*,                                            \
+      (const char* title, int w, int h, SDL_WindowFlags flags))            \
     X(DestroyGPUDevice, void, (SDL_GPUDevice* device))                      \
+    X(DestroyWindow, void, (SDL_Window* window))                             \
     X(DrawGPUIndexedPrimitives, void,                                       \
       (SDL_GPURenderPass* render_pass, Uint32 num_indices,                  \
        Uint32 num_instances, Uint32 first_index, Sint32 vertex_offset,      \
@@ -75,6 +78,8 @@
     X(GetGPUShaderFormats, SDL_GPUShaderFormat, (SDL_GPUDevice* device))    \
     X(GetGPUSwapchainTextureFormat, SDL_GPUTextureFormat,                   \
       (SDL_GPUDevice* device, SDL_Window* window))                          \
+    X(GetWindowPosition, bool, (SDL_Window* window, int* x, int* y))        \
+    X(GetWindowSize, bool, (SDL_Window* window, int* w, int* h))            \
     X(GetWindowSizeInPixels, bool, (SDL_Window* window, int* w, int* h))    \
     X(MapGPUTransferBuffer, void*,                                          \
       (SDL_GPUDevice* device, SDL_GPUTransferBuffer* transfer_buffer,       \
@@ -105,6 +110,8 @@
       (SDL_GPURenderPass* render_pass, const SDL_Rect* rect))               \
     X(SetGPUViewport, void,                                                 \
       (SDL_GPURenderPass* render_pass, const SDL_GPUViewport* viewport))    \
+    X(SetWindowPosition, bool, (SDL_Window* window, int x, int y))          \
+    X(ShowWindow, bool, (SDL_Window* window))                               \
     X(SubmitGPUCommandBufferAndAcquireFence, SDL_GPUFence*,                 \
       (SDL_GPUCommandBuffer* command_buffer))                               \
     X(UnmapGPUTransferBuffer, void,                                         \

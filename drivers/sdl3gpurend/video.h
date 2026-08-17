@@ -263,6 +263,16 @@ typedef struct _VIDEO {
      * viewport override here, so the scene/overlay/text viewports stretch to
      * the full window width instead of the plain 4:3 letterbox. */
     br_device_sdl3gpu_getviewport_cbfn       *get_viewport;
+
+    /* 3-window cockpit: two auxiliary Vulkan windows for left/right views.
+     * Rendered via auxRenderCb during Present, after the main window blit. */
+    SDL_Window* auxWindows[2];
+    int auxWindowsActive;
+    /* Callback invoked by Present for each aux window (0=left, 1=right).
+     * The callback must render the scene into transferTexture via
+     * BrZbSceneRenderBegin/End. */
+    void (*auxRenderCb)(int viewIndex, void* ud);
+    void* auxRenderUd;
 } VIDEO, *HVIDEO;
 
 static inline void SDL3GPUREND_GetWindowSize(HVIDEO hVideo, int* width, int* height) {
@@ -396,6 +406,16 @@ void SDL3GPUREND_DeferFreeBuffer(HVIDEO hVideo, SDL_GPUBuffer* buffer);
 
 /* Returns the appropriate anisotropic linear sampler based on gAnisotropy_level. */
 SDL_GPUSampler* SDL3GPUREND_GetAnisoSampler(HVIDEO hVideo);
+
+/* 3-window cockpit: create/destroy auxiliary Vulkan windows for left/right views.
+ * Called from the platform layer when g3window_cockpit is toggled. The windows
+ * are claimed for the GPU device and managed by the driver. */
+int SDL3GPUREND_AuxWindowsCreate(HVIDEO hVideo, int width, int height);
+void SDL3GPUREND_AuxWindowsDestroy(HVIDEO hVideo);
+
+/* Set the callback invoked during Present for each aux window view. */
+void SDL3GPUREND_SetAuxRenderCallback(HVIDEO hVideo,
+    void (*cb)(int viewIndex, void* ud), void* ud);
 
 /* Fills a screen-space rectangle in the CPU locked buffer with the transparent
  * magenta sentinel so it isn't composited over GPU-rendered content. */

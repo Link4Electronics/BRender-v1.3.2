@@ -38,6 +38,17 @@ void SDL3GPUREND_GetDeviceInfo(SDL3GPUREND_DeviceInfo* info);
  */
 void SDL3GPUREND_SetExternalRenderCallback(void (*cb)(void* cmd, void* swapchain_texture, uint32_t w, uint32_t h, void* ud), void* ud);
 
+/*
+ * 3-window cockpit auxiliary render callback, invoked inside the driver's
+ * Present for each aux window after the main window blit. The callback must
+ * render the scene into transferTexture via BrZbSceneRenderBegin/End.
+ *   viewIndex  -> 0 = left, 1 = right
+ *   ud         -> opaque user pointer
+ */
+struct _VIDEO;
+void SDL3GPUREND_SetAuxRenderCallback(struct _VIDEO* hVideo,
+    void (*cb)(int viewIndex, void* ud), void* ud);
+
 #ifdef __cplusplus
 }
 #endif
