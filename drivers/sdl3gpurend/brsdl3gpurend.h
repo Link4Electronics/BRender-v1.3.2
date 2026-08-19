@@ -49,6 +49,26 @@ struct _VIDEO;
 void SDL3GPUREND_SetAuxRenderCallback(struct _VIDEO* hVideo,
     void (*cb)(int viewIndex, void* ud), void* ud);
 
+/*
+ * Detached map screen render callback, invoked inside the driver's Present for
+ * the map window after the main window blit. The callback must draw the map 2D
+ * content into its own scratch buffer (the game back buffer's pixels are NULL
+ * during Present) and call SDL3GPUREND_MapScreenUpload with the resulting
+ * BGRA8888 pixels; the driver then clears transferTexture, composites the map
+ * texture and blits it to the map window.
+ *   ud -> opaque user pointer
+ */
+void SDL3GPUREND_SetMapRenderCallback(struct _VIDEO* hVideo,
+    void (*cb)(void* ud), void* ud);
+
+/*
+ * Uploads BGRA8888 pixels into the driver's dedicated map window texture.
+ * The map window composite draws this texture each Present. hVideo may be
+ * NULL to use the current driver instance. Returns 0 on success.
+ */
+int SDL3GPUREND_MapScreenUpload(struct _VIDEO* hVideo, const void* bgra,
+    int width, int height);
+
 #ifdef __cplusplus
 }
 #endif

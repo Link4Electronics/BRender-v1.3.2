@@ -273,6 +273,21 @@ typedef struct _VIDEO {
      * BrZbSceneRenderBegin/End. */
     void (*auxRenderCb)(int viewIndex, void* ud);
     void* auxRenderUd;
+
+    /* Detached map screen: a separate window showing the race map 2D content
+     * (map image + blips + checkpoints), without the in-map PIP/dim.
+     * Toggled by Present when gMap_screen_detach (game option checked).
+     * Rendered via mapRenderCb: the callback draws the map into a dedicated
+     * scratch buffer (the game back buffer's pixels are NULL during Present)
+     * and calls SDL3GPUREND_MapScreenUpload; the driver then clears
+     * transferTexture, composites mapTexture and blits to the map window. */
+    SDL_Window* mapWindow;
+    int mapWindowActive;
+    void (*mapRenderCb)(void* ud);
+    void* mapRenderUd;
+    /* BGRA8888 texture holding the detached map screen content, uploaded via
+     * SDL3GPUREND_MapScreenUpload each frame by mapRenderCb. */
+    SDL_GPUTexture* mapTexture;
 } VIDEO, *HVIDEO;
 
 static inline void SDL3GPUREND_GetWindowSize(HVIDEO hVideo, int* width, int* height) {
@@ -416,6 +431,28 @@ void SDL3GPUREND_AuxWindowsDestroy(HVIDEO hVideo);
 /* Set the callback invoked during Present for each aux window view. */
 void SDL3GPUREND_SetAuxRenderCallback(HVIDEO hVideo,
     void (*cb)(int viewIndex, void* ud), void* ud);
+
+/* Detached map screen: create/destroy the map window. Called from Present when
+ * gMap_screen_detach && gMap_mode toggles. */
+int SDL3GPUREND_MapWindowCreate(HVIDEO hVideo, int width, int height);
+void SDL3GPUREND_MapWindowDestroy(HVIDEO hVideo);
+
+/* Set the callback invoked during Present for the map window. The callback
+ * must draw the map 2D content into its own scratch buffer (the game back
+ * buffer's pixels are NULL during Present) and call
+ * SDL3GPUREND_MapScreenUpload with the resulting BGRA8888 pixels. */
+void SDL3GPUREND_SetMapRenderCallback(HVIDEO hVideo,
+    void (*cb)(void* ud), void* ud);
+
+/* Uploads BGRA8888 pixels into the driver's dedicated map window texture.
+ * The map window composite draws this texture each Present. hVideo may be
+ * NULL to use the current driver instance. */
+int SDL3GPUREND_MapScreenUpload(HVIDEO hVideo, const void* bgra,
+    int width, int height);
+
+/* Composite the dedicated map texture across the whole transferTexture,
+ * unconditionally. Called by Present inside the map window block. */
+void SDL3GPUREND_MapScreenDraw(HVIDEO hVideo);
 
 /* Fills a screen-space rectangle in the CPU locked buffer with the transparent
  * magenta sentinel so it isn't composited over GPU-rendered content. */

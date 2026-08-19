@@ -20,6 +20,7 @@
 
 extern int gAnisotropy_level;
 extern int g3window_cockpit;
+extern int gMap_screen_detach;
 
 #define SDL3GPUREND_DEFAULT_RING_VBO_CAPACITY (512 * 1024)
 #define SDL3GPUREND_DEFAULT_RING_IBO_CAPACITY (256 * 1024)
@@ -805,6 +806,7 @@ void SDL3GPUREND_VideoClose(HVIDEO hVideo) {
     if (hVideo->brenderFragShader) { SDL3_ReleaseGPUShader(hVideo->device, hVideo->brenderFragShader); hVideo->brenderFragShader = NULL; }
     if (hVideo->brenderVertShader) { SDL3_ReleaseGPUShader(hVideo->device, hVideo->brenderVertShader); hVideo->brenderVertShader = NULL; }
     if (hVideo->overlayTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->overlayTexture); hVideo->overlayTexture = NULL; }
+    if (hVideo->mapTexture) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->mapTexture); hVideo->mapTexture = NULL; }
     for (int i = 0; i < SDL3GPUREND_BG_POOL; i++) {
         if (hVideo->bgTexture[i]) { SDL3_ReleaseGPUTexture(hVideo->device, hVideo->bgTexture[i]); hVideo->bgTexture[i] = NULL; }
     }
@@ -824,6 +826,7 @@ void SDL3GPUREND_VideoClose(HVIDEO hVideo) {
 
     /* Destroy aux windows before releasing the GPU device. */
     SDL3GPUREND_AuxWindowsDestroy(hVideo);
+    SDL3GPUREND_MapWindowDestroy(hVideo);
 
     if (hVideo->window) SDL3_ReleaseWindowFromGPUDevice(hVideo->device, hVideo->window);
     SDL3_DestroyGPUDevice(hVideo->device);
@@ -885,6 +888,52 @@ void SDL3GPUREND_SetAuxRenderCallback(HVIDEO hVideo,
     if (!v) return;
     v->auxRenderCb = cb;
     v->auxRenderUd = ud;
+}
+
+int SDL3GPUREND_MapWindowCreate(HVIDEO hVideo, int width, int height) {
+    if (!hVideo || !hVideo->device) return -1;
+    if (hVideo->mapWindowActive) return 0;
+
+    int main_x, main_y, main_w, main_h;
+    SDL3_GetWindowPosition(hVideo->window, &main_x, &main_y);
+    SDL3_GetWindowSize(hVideo->window, &main_w, &main_h);
+
+    hVideo->mapWindow = SDL3_CreateWindow("Map View", width, height,
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+    if (!hVideo->mapWindow) {
+        BrLogPrintf("SDL3GPU: Failed to create map window: %s\n", SDL3_GetError());
+        hVideo->mapWindow = NULL;
+        return -1;
+    }
+    SDL3_SetWindowPosition(hVideo->mapWindow, main_x - main_w - 10, main_y);
+    if (!SDL3_ClaimWindowForGPUDevice(hVideo->device, hVideo->mapWindow)) {
+        BrLogPrintf("SDL3GPU: Failed to claim map window for GPU device: %s\n", SDL3_GetError());
+        SDL3_DestroyWindow(hVideo->mapWindow);
+        hVideo->mapWindow = NULL;
+        return -1;
+    }
+    SDL3_ShowWindow(hVideo->mapWindow);
+    hVideo->mapWindowActive = 1;
+    return 0;
+}
+
+void SDL3GPUREND_MapWindowDestroy(HVIDEO hVideo) {
+    if (!hVideo) return;
+    if (hVideo->mapWindow) {
+        SDL3_WaitForGPUIdle(hVideo->device);
+        SDL3_ReleaseWindowFromGPUDevice(hVideo->device, hVideo->mapWindow);
+        SDL3_DestroyWindow(hVideo->mapWindow);
+        hVideo->mapWindow = NULL;
+    }
+    hVideo->mapWindowActive = 0;
+}
+
+void SDL3GPUREND_SetMapRenderCallback(HVIDEO hVideo,
+    void (*cb)(void* ud), void* ud) {
+    HVIDEO v = hVideo ? hVideo : g_sdl3gpurend_video;
+    if (!v) return;
+    v->mapRenderCb = cb;
+    v->mapRenderUd = ud;
 }
 
 void SDL3GPUREND_VideoResize(HVIDEO hVideo) {
@@ -1073,6 +1122,18 @@ int SDL3GPUREND_Present(HVIDEO hVideo) {
             SDL3GPUREND_AuxWindowsDestroy(hVideo);
     }
 
+    /* Handle deferred map window toggle: follow the harness "Map view screen"
+     * option directly (the window opens/closes with the checkbox). */
+    {
+        int map_on = gMap_screen_detach;
+        if (map_on != hVideo->mapWindowActive) {
+            if (map_on)
+                SDL3GPUREND_MapWindowCreate(hVideo, hVideo->windowWidth, hVideo->windowHeight);
+            else
+                SDL3GPUREND_MapWindowDestroy(hVideo);
+        }
+    }
+
     if (hVideo->renderPassActive)
         SDL3GPUREND_EndRenderPass(hVideo);
 
@@ -1177,6 +1238,45 @@ int SDL3GPUREND_Present(HVIDEO hVideo) {
                     blit.flip_mode = SDL_FLIP_VERTICAL;
                     SDL3_BlitGPUTexture(hVideo->commandBuffer, &blit);
                 }
+            }
+        }
+    }
+
+    /* 4. Map screen: draw the map 2D content and blit it to the map window.
+     * The callback draws the map into its own scratch buffer (the game back
+     * buffer's pixels are NULL during Present) and uploads the resulting
+     * BGRA8888 pixels via SDL3GPUREND_MapScreenUpload; we then clear
+     * transferTexture, composite the map texture (full bright map, no in-map
+     * PIP or dim) and blit to the map window. */
+    if (hVideo->mapWindowActive && hVideo->mapRenderCb) {
+        /* Ensure no render pass is active before the callback. */
+        SDL3GPUREND_EndRenderPass(hVideo);
+
+        hVideo->mapRenderCb(hVideo->mapRenderUd);
+
+        /* Close any pass the callback opened, clear transferTexture, then
+         * composite the freshly uploaded map texture (full-screen). */
+        SDL3GPUREND_EndRenderPass(hVideo);
+        SDL3GPUREND_BeginRenderPass(hVideo);
+        SDL3GPUREND_MapScreenDraw(hVideo);
+        SDL3GPUREND_EndRenderPass(hVideo);
+
+        /* Blit transferTexture to the map window's swapchain. */
+        SDL_GPUTexture* mapSwapchainTex = NULL;
+        Uint32 mw = 0, mh = 0;
+        if (SDL3_AcquireGPUSwapchainTexture(hVideo->commandBuffer, hVideo->mapWindow, &mapSwapchainTex, &mw, &mh)) {
+            if (mapSwapchainTex) {
+                SDL_GPUBlitInfo blit = {0};
+                blit.source.texture = hVideo->transferTexture;
+                blit.source.w = hVideo->windowWidth;
+                blit.source.h = hVideo->windowHeight;
+                blit.destination.texture = mapSwapchainTex;
+                blit.destination.w = mw;
+                blit.destination.h = mh;
+                blit.load_op = SDL_GPU_LOADOP_DONT_CARE;
+                blit.filter = SDL_GPU_FILTER_LINEAR;
+                blit.flip_mode = SDL_FLIP_VERTICAL;
+                SDL3_BlitGPUTexture(hVideo->commandBuffer, &blit);
             }
         }
     }
@@ -1293,6 +1393,75 @@ void SDL3GPUREND_OverlayDraw(HVIDEO hVideo) {
 
     SDL3_DrawGPUIndexedPrimitives(pass, SDL3GPUREND_OVERLAY_QUAD_INDICES, 1, 0, 0, 0);
     hVideo->overlayDirty = 0;
+}
+
+/* Composite the detached map window's dedicated texture across the whole
+ * transferTexture. Unlike OverlayDraw, this is unconditional (the map content
+ * is uploaded each frame by the map callback, not via the normal flush). */
+void SDL3GPUREND_MapScreenDraw(HVIDEO hVideo) {
+    if (!hVideo->renderPassActive || !hVideo->currentPass) return;
+    if (!hVideo->mapTexture || !hVideo->overlayPipeline || !hVideo->overlaySampler) return;
+
+    SDL_GPURenderPass* pass = hVideo->currentPass;
+
+    SDL_GPUViewport viewport = {0};
+    viewport.w = (float)hVideo->windowWidth;
+    viewport.h = (float)hVideo->windowHeight;
+    viewport.max_depth = 1.0f;
+    SDL_Rect scissor = {0, 0, hVideo->windowWidth, hVideo->windowHeight};
+    SDL3_SetGPUViewport(pass, &viewport);
+    SDL3_SetGPUScissor(pass, &scissor);
+
+    if (hVideo->lastPipeline != hVideo->overlayPipeline) {
+        SDL3_BindGPUGraphicsPipeline(pass, hVideo->overlayPipeline);
+        hVideo->lastPipeline = hVideo->overlayPipeline;
+    }
+
+    SDL_GPUBufferBinding vbo = { hVideo->overlayQuadVbo, 0 };
+    if (hVideo->lastVbo != hVideo->overlayQuadVbo || hVideo->lastVboOffset != 0) {
+        SDL3_BindGPUVertexBuffers(pass, 0, &vbo, 1);
+        hVideo->lastVbo = hVideo->overlayQuadVbo;
+        hVideo->lastVboOffset = 0;
+    }
+
+    SDL_GPUBufferBinding ibo = { hVideo->overlayQuadIbo, 0 };
+    if (hVideo->lastIbo != hVideo->overlayQuadIbo || hVideo->lastIboOffset != 0) {
+        SDL3_BindGPUIndexBuffer(pass, &ibo, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+        hVideo->lastIbo = hVideo->overlayQuadIbo;
+        hVideo->lastIboOffset = 0;
+    }
+
+    if (hVideo->lastTexture != hVideo->mapTexture || hVideo->lastSampler != hVideo->overlaySampler) {
+        SDL_GPUTextureSamplerBinding tsb = { hVideo->mapTexture, hVideo->overlaySampler };
+        SDL3_BindGPUFragmentSamplers(pass, SDL3GPUREND_FRAGMENT_SAMPLER_SLOT, &tsb, 1);
+        hVideo->lastTexture = hVideo->mapTexture;
+        hVideo->lastSampler = hVideo->overlaySampler;
+    }
+
+    SDL3_DrawGPUIndexedPrimitives(pass, SDL3GPUREND_OVERLAY_QUAD_INDICES, 1, 0, 0, 0);
+}
+
+/* Upload BGRA8888 pixels into the dedicated map window texture. The texture is
+ * created lazily at the upload size and re-uploaded each frame by the map
+ * callback. hVideo may be NULL to use the current driver instance. */
+int SDL3GPUREND_MapScreenUpload(HVIDEO hVideo, const void* bgra, int width, int height) {
+    HVIDEO v = hVideo ? hVideo : g_sdl3gpurend_video;
+    if (!v || !bgra || width <= 0 || height <= 0) return -1;
+    if (v->mapTexture == NULL) {
+        SDL_GPUTextureCreateInfo ti = {0};
+        ti.type = SDL_GPU_TEXTURETYPE_2D;
+        ti.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+        ti.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        ti.width = width;
+        ti.height = height;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels = 1;
+        ti.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        v->mapTexture = SDL3_CreateGPUTexture(v->device, &ti);
+        if (!v->mapTexture) return -1;
+    }
+    return SDL3GPUREND_UploadBufferToImage(v, v->mapTexture, width, height, 0, 0,
+        bgra, (size_t)width * (size_t)height * 4);
 }
 
 void SDL3GPUREND_DrawSceneBackground(HVIDEO hVideo, int gx, int gy, int gw, int gh) {
