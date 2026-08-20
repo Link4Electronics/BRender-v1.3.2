@@ -436,7 +436,7 @@ SDL_GPUGraphicsPipeline* SDL3GPUREND_CreateGraphicsPipeline(HVIDEO hVideo,
     const SDL_GPUVertexBufferDescription* bindingDesc,
     const SDL_GPUVertexAttribute* attrDescs, uint32_t attrCount,
     uint32_t width, uint32_t height, bool blendEnable,
-    bool depthTestEnable, bool depthWriteEnable) {
+    bool depthTestEnable, bool depthWriteEnable, SDL_GPUCompareOp compareOp) {
 
     (void)width;
     (void)height;
@@ -454,7 +454,10 @@ SDL_GPUGraphicsPipeline* SDL3GPUREND_CreateGraphicsPipeline(HVIDEO hVideo,
     ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
     ci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-    ci.rasterizer_state.enable_depth_clip = true;
+    /* Depth clamping (disable clip) mirrors the GL driver's GL_DEPTH_CLAMP in
+     * frameBegin: the sky dome sits at yon_z - 1 and would otherwise be clipped
+     * at the far plane, z-fighting with the horizon geometry. */
+    ci.rasterizer_state.enable_depth_clip = false;
     ci.rasterizer_state.enable_depth_bias = false;
     ci.rasterizer_state.depth_bias_constant_factor = 0.0f;
     ci.rasterizer_state.depth_bias_clamp = 0.0f;
@@ -465,7 +468,7 @@ SDL_GPUGraphicsPipeline* SDL3GPUREND_CreateGraphicsPipeline(HVIDEO hVideo,
     ci.multisample_state.enable_mask = false;
     ci.multisample_state.enable_alpha_to_coverage = false;
 
-    ci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+    ci.depth_stencil_state.compare_op = compareOp;
     ci.depth_stencil_state.enable_depth_test = depthTestEnable;
     ci.depth_stencil_state.enable_depth_write = depthWriteEnable;
     ci.depth_stencil_state.enable_stencil_test = false;
@@ -643,28 +646,48 @@ HVIDEO SDL3GPUREND_VideoOpen(HVIDEO hVideo, void* parent,
         hVideo->brenderPipeline = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->brenderVertShader, hVideo->brenderFragShader,
             &bindingDesc, attrDescs, 4,
-            hVideo->windowWidth, hVideo->windowHeight, false, true, true);
+            hVideo->windowWidth, hVideo->windowHeight, false, true, true,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->brenderPipeline)
+            goto cleanup_shaders;
+
+        hVideo->brenderPipelineLE = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
+            hVideo->brenderVertShader, hVideo->brenderFragShader,
+            &bindingDesc, attrDescs, 4,
+            hVideo->windowWidth, hVideo->windowHeight, false, true, true,
+            SDL_GPU_COMPAREOP_LESS_OR_EQUAL);
+        if (!hVideo->brenderPipelineLE)
             goto cleanup_shaders;
 
         hVideo->brenderPipelineNoDepth = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->brenderVertShader, hVideo->brenderFragShader,
             &bindingDesc, attrDescs, 4,
-            hVideo->windowWidth, hVideo->windowHeight, false, false, false);
+            hVideo->windowWidth, hVideo->windowHeight, false, false, false,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->brenderPipelineNoDepth)
             goto cleanup_shaders;
 
         hVideo->brenderBlendPipeline = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->brenderVertShader, hVideo->brenderFragShader,
             &bindingDesc, attrDescs, 4,
-            hVideo->windowWidth, hVideo->windowHeight, true, true, false);
+            hVideo->windowWidth, hVideo->windowHeight, true, true, false,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->brenderBlendPipeline)
+            goto cleanup_shaders;
+
+        hVideo->brenderBlendPipelineLE = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
+            hVideo->brenderVertShader, hVideo->brenderFragShader,
+            &bindingDesc, attrDescs, 4,
+            hVideo->windowWidth, hVideo->windowHeight, true, true, false,
+            SDL_GPU_COMPAREOP_LESS_OR_EQUAL);
+        if (!hVideo->brenderBlendPipelineLE)
             goto cleanup_shaders;
 
         hVideo->brenderBlendPipelineNoDepth = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->brenderVertShader, hVideo->brenderFragShader,
             &bindingDesc, attrDescs, 4,
-            hVideo->windowWidth, hVideo->windowHeight, true, false, false);
+            hVideo->windowWidth, hVideo->windowHeight, true, false, false,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->brenderBlendPipelineNoDepth)
             goto cleanup_shaders;
     }
@@ -697,7 +720,8 @@ HVIDEO SDL3GPUREND_VideoOpen(HVIDEO hVideo, void* parent,
         hVideo->overlayPipeline = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->overlayVertShader, hVideo->overlayFragShader,
             &bindingDesc, attrDescs, 2,
-            hVideo->windowWidth, hVideo->windowHeight, true, false, false);
+            hVideo->windowWidth, hVideo->windowHeight, true, false, false,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->overlayPipeline)
             goto cleanup_shaders;
     }
@@ -732,7 +756,8 @@ HVIDEO SDL3GPUREND_VideoOpen(HVIDEO hVideo, void* parent,
         hVideo->textPipeline = SDL3GPUREND_CreateGraphicsPipeline(hVideo,
             hVideo->textVertShader, hVideo->textFragShader,
             &bindingDesc, attrDescs, 2,
-            hVideo->windowWidth, hVideo->windowHeight, true, false, false);
+            hVideo->windowWidth, hVideo->windowHeight, true, false, false,
+            SDL_GPU_COMPAREOP_LESS);
         if (!hVideo->textPipeline)
             goto cleanup_shaders;
     }
@@ -794,8 +819,10 @@ void SDL3GPUREND_VideoClose(HVIDEO hVideo) {
         SDL3_ReleaseGPUShader(hVideo->device, hVideo->defaultVertShader);
     if (hVideo->overlayPipeline) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->overlayPipeline); hVideo->overlayPipeline = NULL; }
     if (hVideo->brenderBlendPipelineNoDepth) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderBlendPipelineNoDepth); hVideo->brenderBlendPipelineNoDepth = NULL; }
+    if (hVideo->brenderBlendPipelineLE) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderBlendPipelineLE); hVideo->brenderBlendPipelineLE = NULL; }
     if (hVideo->brenderBlendPipeline) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderBlendPipeline); hVideo->brenderBlendPipeline = NULL; }
     if (hVideo->brenderPipelineNoDepth) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderPipelineNoDepth); hVideo->brenderPipelineNoDepth = NULL; }
+    if (hVideo->brenderPipelineLE) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderPipelineLE); hVideo->brenderPipelineLE = NULL; }
     if (hVideo->brenderPipeline) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->brenderPipeline); hVideo->brenderPipeline = NULL; }
     hVideo->defaultPipeline = NULL;
     if (hVideo->textPipeline) { SDL3_ReleaseGPUGraphicsPipeline(hVideo->device, hVideo->textPipeline); hVideo->textPipeline = NULL; }

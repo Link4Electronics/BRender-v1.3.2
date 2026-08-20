@@ -99,8 +99,10 @@ typedef struct _VIDEO {
 
     SDL_GPUGraphicsPipeline* brenderPipeline;
     SDL_GPUGraphicsPipeline* brenderPipelineNoDepth;
+    SDL_GPUGraphicsPipeline* brenderPipelineLE;
     SDL_GPUGraphicsPipeline* brenderBlendPipeline;
     SDL_GPUGraphicsPipeline* brenderBlendPipelineNoDepth;
+    SDL_GPUGraphicsPipeline* brenderBlendPipelineLE;
     SDL_GPUGraphicsPipeline* defaultPipeline;
     SDL_GPUGraphicsPipeline* overlayPipeline;
     SDL_GPUGraphicsPipeline* textPipeline;
@@ -326,7 +328,7 @@ SDL_GPUGraphicsPipeline* SDL3GPUREND_CreateGraphicsPipeline(HVIDEO hVideo,
     const SDL_GPUVertexBufferDescription* bindingDesc,
     const SDL_GPUVertexAttribute* attrDescs, uint32_t attrCount,
     uint32_t width, uint32_t height, bool blendEnable,
-    bool depthTestEnable, bool depthWriteEnable);
+    bool depthTestEnable, bool depthWriteEnable, SDL_GPUCompareOp compareOp);
 
 /* Copies the scene UBO payload into hVideo->sceneData. The actual push to the
  * GPU happens in SDL3GPUREND_SceneBegin (uniform slot 1 on both stages), so the

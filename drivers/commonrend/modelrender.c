@@ -110,10 +110,13 @@ void StoredSDL3GPURENDRenderGroup(br_geometry_stored* self, br_renderer* rendere
         br_boolean blending_on = (renderer->state.current->prim.flags & PRIMF_BLEND) ||
             (renderer->state.current->prim.colour_map != NULL && renderer->state.current->prim.colour_map->blended);
         br_boolean depth_off = renderer->state.current->surface.force_front || renderer->state.current->surface.force_back;
+        br_boolean depth_le = renderer->state.current->prim.depth_test == BRT_LESS_OR_EQUAL;
 
         SDL_GPUGraphicsPipeline* pipeline = blending_on
-            ? (depth_off ? hVideo->brenderBlendPipelineNoDepth : hVideo->brenderBlendPipeline)
-            : (depth_off ? hVideo->brenderPipelineNoDepth : hVideo->brenderPipeline);
+            ? (depth_off ? hVideo->brenderBlendPipelineNoDepth
+                : (depth_le ? hVideo->brenderBlendPipelineLE : hVideo->brenderBlendPipeline))
+            : (depth_off ? hVideo->brenderPipelineNoDepth
+                : (depth_le ? hVideo->brenderPipelineLE : hVideo->brenderPipeline));
         if (pipeline != hVideo->lastPipeline) {
             SDL3_BindGPUGraphicsPipeline(hVideo->currentPass, pipeline);
             hVideo->lastPipeline = pipeline;
