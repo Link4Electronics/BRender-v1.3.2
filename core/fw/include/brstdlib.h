@@ -70,20 +70,20 @@ br_int_32 BR_RESIDENT_ENTRY BrVSprintfN(char * buf, br_size_t buf_size, char *fm
 	/*
 	 * Force stlib operations to be used directly
 	 */
-#define BrMemCmp	memcmp
-#define BrMemCpy	memcpy
-#define BrMemSet	memset
+#undef BrMemCmp
+#undef BrMemCpy
+#undef BrMemSet
 
-#define BrStrCat	strcat
-#define BrStrCmp	strcmp
-#define BrStrICmp	stricmp
-#define BrStrCpy	strcpy
-#define BrStrLen	strlen
-#define BrStrNCmp	strncmp
-#define BrStrNICmp	strnicmp
-#define BrStrNCpy	strncpy
+#undef BrStrCat
+#undef BrStrCmp
+#undef BrStrICmp
+#undef BrStrCpy
+#undef BrStrLen
+#undef BrStrNCmp
+#undef BrStrNICmp
+#undef BrStrNCpy
 
-#define BrStrChr	strchr
+#undef BrStrChr
 #define BrStrRChr	strrchr
 
 #define BrAbort		abort
