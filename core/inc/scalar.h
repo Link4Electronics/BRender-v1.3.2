@@ -208,7 +208,7 @@ typedef float br_ufraction;
 
 
 #define BR_MAC2(a,b,c,d)		((a)*(b)+(c)*(d))
-#define BR_MAC3(a,b,c,d,e,f)	((a)*(b)+(c)*(d)+(e)*(f))
+#define BR_MAC3(a,b,c,d,e,f)	((a)*(b) + ((c)*(d) + (e)*(f)))
 #define BR_MAC4(a,b,c,d,e,f,g,h) ((a)*(b)+(c)*(d)+(e)*(f)+(g)*(h))
 
 #define BR_MAC2DIV(a,b,c,d,e)		(((a)*(b)+(c)*(d))/e)
@@ -216,7 +216,7 @@ typedef float br_ufraction;
 #define BR_MAC4DIV(a,b,c,d,e,f,g,h,i) (((a)*(b)+(c)*(d)+(e)*(f)+(g)*(h))/i)
 
 #define BR_SQR2(a,b)			((a)*(a)+(b)*(b))
-#define BR_SQR3(a,b,c)			((a)*(a)+(b)*(b)+(c)*(c))
+#define BR_SQR3(a,b,c)			((a)*(a) + ((b)*(b) + (c)*(c)))
 #define BR_SQR4(a,b,c,d)		((a)*(a)+(b)*(b)+(c)*(c)+(d)*(d))
 
 #define BR_FMAC2(a,b,c,d)		((a)*(b)+(c)*(d))
@@ -224,7 +224,7 @@ typedef float br_ufraction;
 #define BR_FMAC4(a,b,c,d,e,f,g,h) ((a)*(b)+(c)*(d)+(e)*(f)+(g)*(h))
 
 #define BR_LENGTH2(a,b)			((br_scalar)sqrt((a)*(a)+(b)*(b)))
-#define BR_LENGTH3(a,b,c)		((br_scalar)sqrt((a)*(a)+(b)*(b)+(c)*(c)))
+#define BR_LENGTH3(a,b,c)		((br_scalar)sqrt((a)*(a) + ((b)*(b) + (c)*(c))))
 #define BR_LENGTH4(a,b,c,d)		((br_scalar)sqrt((a)*(a)+(b)*(b)+(c)*(c)+(d)*(d)))
 
 #define BR_RLENGTH2(a,b)		((br_scalar)(1.0/sqrt((a)*(a)+(b)*(b))))
